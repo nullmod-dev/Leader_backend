@@ -1,0 +1,177 @@
+/**
+ * Inventory — /detachments/:id/inventory-items|movements and /inventory-items.
+ * docs/api/inventory.md
+ *
+ * Reads the seeded d_dam_central store (i1 … i5). Movements and edits happen
+ * on an item created here and deleted at the end; the only seeded item used
+ * for a write is i1, and only for a request that is refused (no effect).
+ */
+module.exports = {
+  name: 'Tenant · Inventory',
+  order: 22,
+  description:
+    'Store reads, item create with packaging (opening stock recorded as an inflow), movements in cartons/strips, ' +
+    'insufficient_stock / packaging_required / packaging_unavailable, the ledger, edit, image and delete.',
+  items: [
+    {
+      name: 'Store — d_dam_central items (sorted by name)',
+      method: 'GET',
+      path: '/detachments/d_dam_central/inventory-items',
+      expect: 200,
+      tests: [
+        'pm.expect(json).to.be.an("array").that.is.not.empty',
+        'pm.expect(json.map(i => i.id)).to.include("i1")',
+        'pm.expect(json.every(i => ["ok","low","empty"].includes(i.level))).to.eql(true)',
+      ],
+    },
+    {
+      name: 'Store — get i1',
+      method: 'GET',
+      path: '/inventory-items/i1',
+      expect: 200,
+      tests: ['pm.expect(json.id).to.eql("i1")', 'pm.expect(json.detachmentId).to.eql("d_dam_central")'],
+    },
+    {
+      name: 'Items — create with packaging (1 carton = 50 units)',
+      method: 'POST',
+      path: '/inventory-items',
+      idempotent: true,
+      body: {
+        detachmentId: 'd_dam_central',
+        name: 'شاش بوستمان {{$timestamp}}',
+        unit: 'علبة',
+        openingStock: 1,
+        openingUnit: 'carton',
+        unitsPerStrip: 10,
+        stripsPerCarton: 5,
+        minimum: 20,
+        expiresOn: '2027-06-30',
+      },
+      expect: 201,
+      tests: ['pm.expect(json.currentStock).to.eql(50)', 'pm.expect(json.level).to.eql("ok")', 'pm.expect(json.preferredUnit).to.eql("carton")', 'pm.expect(json.expiresOn).to.eql("2027-06-30")'],
+      save: { newItemId: 'json.id' },
+    },
+    {
+      name: 'Items — opening in strips without packaging → 422 packaging_required',
+      method: 'POST',
+      path: '/inventory-items',
+      body: { detachmentId: 'd_dam_central', name: 'صنف بلا تعبئة', unit: 'قطعة', openingStock: 2, openingUnit: 'strip' },
+      expect: 422,
+      tests: ['pm.expect(json.error.code).to.eql("packaging_required")'],
+    },
+    {
+      name: 'Items — negative minimum → 422 validation',
+      method: 'POST',
+      path: '/inventory-items',
+      body: { detachmentId: 'd_dam_central', name: 'صنف', unit: 'قطعة', minimum: -1 },
+      expect: 422,
+      tests: ['pm.expect(json.error.code).to.eql("validation")'],
+    },
+    {
+      name: 'Movements — inflow 2 cartons',
+      method: 'POST',
+      path: '/inventory-items/{{newItemId}}/movements',
+      idempotent: true,
+      body: { itemId: '{{newItemId}}', direction: 'inflow', quantity: 2, packagingUnit: 'carton', reason: 'توريد من المستودع الرئيسي' },
+      expect: 200,
+      tests: [
+        'pm.expect(json.currentStock).to.eql(150)',
+        'pm.expect(json.lastMovement.convertedBaseUnitQuantity).to.eql(100)',
+        'pm.expect(json.lastMovement.stockBefore).to.eql(50)',
+        'pm.expect(json.lastMovement.stockAfter).to.eql(150)',
+        'pm.expect(json.lastMovement.performedByName).to.be.a("string")',
+      ],
+    },
+    {
+      name: 'Movements — outflow 3 strips',
+      method: 'POST',
+      path: '/inventory-items/{{newItemId}}/movements',
+      idempotent: true,
+      body: { direction: 'outflow', quantity: 3, packagingUnit: 'strip', reason: 'صرف لمناوبة مركز الشعلان' },
+      expect: 200,
+      tests: ['pm.expect(json.currentStock).to.eql(120)', 'pm.expect(json.lastMovement.direction).to.eql("outflow")'],
+    },
+    {
+      name: 'Movements — outflow larger than stock → 409 insufficient_stock',
+      method: 'POST',
+      path: '/inventory-items/{{newItemId}}/movements',
+      body: { direction: 'outflow', quantity: 1000, packagingUnit: 'carton', reason: 'كمية مستحيلة' },
+      expect: 409,
+      tests: ['pm.expect(json.error.code).to.eql("insufficient_stock")', 'pm.expect(json.error.currentStock).to.eql(120)'],
+    },
+    {
+      name: 'Movements — strips on i1 (no strip packaging) → 422 packaging_unavailable',
+      method: 'POST',
+      path: '/inventory-items/i1/movements',
+      body: { direction: 'inflow', quantity: 1, packagingUnit: 'strip', reason: 'x' },
+      expect: 422,
+      tests: ['pm.expect(json.error.code).to.eql("packaging_unavailable")'],
+    },
+    {
+      name: 'Movements — Simple Admin inflow (inventory.adjust in d_dam_central)',
+      method: 'POST',
+      path: '/inventory-items/{{newItemId}}/movements',
+      auth: 'simple',
+      idempotent: true,
+      body: { direction: 'inflow', quantity: 5, reason: 'تبرع' },
+      expect: 200,
+      tests: ['pm.expect(json.currentStock).to.eql(125)'],
+    },
+    {
+      name: 'Movements — ledger of the item (newest first)',
+      method: 'GET',
+      path: '/inventory-items/{{newItemId}}/movements',
+      expect: 200,
+      tests: [
+        'pm.expect(json).to.have.lengthOf(4)',
+        'pm.expect(json[json.length - 1].source).to.eql("inventory_setup")',
+        'pm.expect(new Date(json[0].at) >= new Date(json[1].at)).to.eql(true)',
+      ],
+    },
+    {
+      name: 'Movements — detachment ledger ?limit=5',
+      method: 'GET',
+      path: '/detachments/d_dam_central/inventory-movements',
+      query: { limit: 5 },
+      expect: 200,
+      tests: ['pm.expect(json.length).to.be.at.most(5)', 'pm.expect(json[0].itemId).to.eql(pm.collectionVariables.get("newItemId"))'],
+    },
+    {
+      name: 'Items — PUT (quantity is not editable; level recomputed)',
+      method: 'PUT',
+      path: '/inventory-items/{{newItemId}}',
+      idempotent: true,
+      body: { id: '{{newItemId}}', name: 'شاش معقم (بوستمان)', unit: 'علبة', minimum: 200, currentStock: 9999, expiresOn: null },
+      expect: 200,
+      tests: ['pm.expect(json.currentStock).to.eql(125)', 'pm.expect(json.level).to.eql("low")', 'pm.expect(json.expiresOn).to.eql(undefined)'],
+    },
+    {
+      name: 'Items — upload image (multipart "image")',
+      method: 'POST',
+      path: '/inventory-items/{{newItemId}}/image',
+      formData: [{ key: 'image', type: 'file', src: 'fixtures/sample.jpg' }],
+      expect: 200,
+      tests: ['pm.expect(json.imageUrl).to.match(/\\/images\\/inventory\\/.+\\.webp$/)'],
+    },
+    {
+      name: 'Items — remove image',
+      method: 'DELETE',
+      path: '/inventory-items/{{newItemId}}/image',
+      expect: 200,
+      tests: ['pm.expect(json.imageUrl).to.eql(undefined)'],
+    },
+    {
+      name: 'Items — delete (with its movements and image)',
+      method: 'DELETE',
+      path: '/inventory-items/{{newItemId}}',
+      expect: 204,
+    },
+    {
+      name: 'Items — get the deleted item → 404',
+      method: 'GET',
+      path: '/inventory-items/{{newItemId}}',
+      expect: 404,
+      tests: ['pm.expect(json.error.code).to.eql("not_found")'],
+    },
+  ],
+};

@@ -1,0 +1,8 @@
+node_modules/
+config.env
+.mongo-data/
+coverage/
+postman/last-run.json
+public/images/**/*
+!public/images/.gitkeep
+*.log

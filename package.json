@@ -1,0 +1,52 @@
+{
+  "name": "leader-backend",
+  "version": "1.0.0",
+  "description": "Leader / ليدر backend — Node.js, Express and MongoDB API for the Leader Flutter app (tenant plane, platform control plane, customer demo, commerce).",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "db": "node scripts/local-mongo.js",
+    "seed": "node seed/index.js",
+    "seed:reset": "node seed/index.js --reset",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
+    "postman:build": "node scripts/build-postman.js",
+    "postman:run": "newman run postman/Leader.postman_collection.json -e postman/Leader.local.postman_environment.json --working-dir postman --delay-request 5 --reporters cli,json --reporter-json-export postman/last-run.json",
+    "routes": "node scripts/list-routes.js",
+    "routes:coverage": "node scripts/list-routes.js --coverage"
+  },
+  "engines": {
+    "node": ">=20.9"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.8.2",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^7.5.1",
+    "google-auth-library": "^10.9.1",
+    "helmet": "^7.2.0",
+    "hpp": "^0.2.3",
+    "joi": "^17.13.8",
+    "jsonwebtoken": "^9.0.3",
+    "luxon": "^3.7.2",
+    "mongoose": "^8.24.4",
+    "morgan": "^1.12.1",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^10.0.12",
+    "otplib": "^12.0.1",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "mongodb-memory-server": "^10.4.3",
+    "newman": "^6.2.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.3.0"
+  }
+}
