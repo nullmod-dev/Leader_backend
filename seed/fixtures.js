@@ -21,8 +21,8 @@ module.exports = {
   // The tenant the seeded Main/Simple Admin operate in.
   hilal: {
     id: 'saas_hilal',
-    displayName: 'فرق الهلال الطبية',
-    teamCode: 'MTM-4K7P-QX92',
+    displayName: 'alwalla', // TEST DATA — remove before launch
+    teamCode: 'MTM-8J9M-4A4E', // TEST DATA — remove before launch
     groups: { damascus: 't_damascus', central: 't_central', coast: 't_coast' },
     detachments: {
       damCentral: 'd_dam_central',
@@ -39,7 +39,7 @@ module.exports = {
   },
 
   tenants: [
-    { id: 'saas_hilal', teamCode: 'MTM-4K7P-QX92' },
+    { id: 'saas_hilal', teamCode: 'MTM-8J9M-4A4E' }, // TEST DATA — remove before launch
     { id: 'saas_najd', teamCode: 'MTM-9WCT-3H5R' },
     { id: 'saas_sahel', teamCode: 'MTM-2FGD-8NVJ' },
     { id: 'saas_wadi', teamCode: 'MTM-7RMB-KZ64' },

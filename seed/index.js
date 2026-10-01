@@ -69,8 +69,8 @@ const ALL_FEATURES = [...FEATURE_KEYS];
 const TENANTS = [
   {
     id: 'saas_hilal',
-    displayName: 'فرق الهلال الطبية',
-    teamCode: 'MTM-4K7P-QX92',
+    displayName: 'alwalla', // TEST DATA — remove before launch
+    teamCode: 'MTM-8J9M-4A4E', // TEST DATA — remove before launch
     createdDaysAgo: 612,
     subscription: { status: 'active', planId: 'mtm_advanced' },
     features: ALL_FEATURES,
@@ -746,7 +746,7 @@ const seedHilal = async (superAdmin) => {
     action: 'admin_invitation_created',
     actor: mainAdmin,
     target: { type: 'simple_admin_invitation', id: 'az_hilal_admin' },
-    tenant: { id: tenantId, displayName: 'فرق الهلال الطبية' },
+    tenant: { id: tenantId, displayName: 'alwalla' }, // TEST DATA — remove before launch
     changes: [{ field: 'invitation_status', after: 'pending' }],
   });
 
