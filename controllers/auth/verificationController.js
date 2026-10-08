@@ -18,7 +18,7 @@ const onboarding = require('../../services/onboardingService');
 const ENDED = () => new AppError('verification_challenge_ended', 409, 'This verification has ended. Start again.');
 
 const loadActive = async (challengeId) => {
-  const ch = await VerificationChallenge.findById(String(challengeId)).select('+codeHash');
+  const ch = await VerificationChallenge.findById(String(challengeId)).select('+codeHash +googleSub');
   if (!ch || ch.status !== 'active') throw ENDED();
   return ch;
 };
@@ -59,9 +59,27 @@ exports.verify = catchAsync(async (req, res) => {
 
   const account = await Account.findById(ch.accountId);
   if (!account) throw ENDED();
-  if (!account.emailVerified) {
+  // A returning account's Google sign-in: the code proved the mailbox, so the
+  // Google identity it started with is linked now (the password, if any, stays).
+  const linkGoogle = Boolean(ch.googleSub) && account.googleSub !== ch.googleSub;
+  if (linkGoogle && account.googleSub) {
+    throw new AppError('auth_method_link_required', 409, 'This address already signs in with another method.');
+  }
+  if (!account.emailVerified || linkGoogle) {
     account.emailVerified = true;
-    await account.save();
+    if (linkGoogle) {
+      account.googleSub = ch.googleSub;
+      if (!account.methods.includes('google')) account.methods.push('google');
+    }
+    try {
+      await account.save();
+    } catch (err) {
+      // The Google identity was linked to another account meanwhile.
+      if (err && err.code === 11000) {
+        throw new AppError('auth_method_link_required', 409, 'This address already signs in with another method.');
+      }
+      throw err;
+    }
   }
   await otpService.endActiveChallenges(account._id);
 

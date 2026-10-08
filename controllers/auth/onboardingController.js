@@ -133,6 +133,5 @@ exports.complete = catchAsync(async (req, res) => {
     return fresh;
   });
 
-  const { accessToken, refreshToken } = await tokenService.createSession(account, 'full', req);
-  res.status(200).json({ outcome: 'ready', accessToken, refreshToken });
+  res.status(200).json({ outcome: 'ready', ...tokenService.pair(await tokenService.createSession(account, 'full', req)) });
 });

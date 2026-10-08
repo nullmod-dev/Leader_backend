@@ -6,8 +6,10 @@
  *       `mock-google:<email>`            → verified identity
  *       `mock-google-unverified:<email>` → unverified identity
  *  2. `GOOGLE_CLIENT_ID` configured → google-auth-library verifies the ID
- *     token signature, issuer, expiry and audience. Any failure → 401
- *     `google_assertion_rejected`.
+ *     token signature, issuer, expiry and audience; the issuer is re-checked
+ *     here and the address must be `email_verified` (an unverified address
+ *     could otherwise claim an unverified account with that email). Any
+ *     failure → 401 `google_assertion_rejected`.
  *  3. Neither → 403 `unsupported_auth_method`.
  *
  * The ID token is a credential: it is never logged or stored.
@@ -19,6 +21,7 @@ const { email: normEmail, isEmail } = require('../utils/normalize');
 const REJECTED = () => new AppError('google_assertion_rejected', 401, 'The Google sign-in could not be verified.');
 
 const MOCK_RE = /^mock-google(-unverified)?:(.+)$/;
+const ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
 
 let client = null;
 const getClient = () => {
@@ -61,9 +64,10 @@ const verify = async (idToken) => {
     throw REJECTED();
   }
   if (!payload || !payload.sub || !payload.email || !isEmail(payload.email)) throw REJECTED();
+  if (!ISSUERS.has(payload.iss) || !truthy(payload.email_verified)) throw REJECTED();
   return {
     email: normEmail(payload.email),
-    emailVerified: truthy(payload.email_verified),
+    emailVerified: true,
     sub: String(payload.sub),
     name: payload.name || '',
   };

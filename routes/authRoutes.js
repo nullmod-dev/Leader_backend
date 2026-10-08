@@ -5,8 +5,10 @@
  *   POST   /sign-up                   public · idempotent (required) → 202 Challenge
  *   POST   /sign-in                   public → outcome
  *   POST   /google                    public · idempotent (required) → outcome
- *   POST   /verification/verify       public · idempotent (required) → outcome
- *   POST   /verification/resend       public · idempotent (required) → Challenge
+ *   POST   /email-status              public · device/IP budget → { status: registered|invited|new }
+ *   POST   /sign-in/code              public · device/IP budget → 202 Challenge (purpose sign_in)
+ *   POST   /verification/verify       public · IP budget · idempotent (required) → outcome
+ *   POST   /verification/resend       public · IP budget · idempotent (required) → Challenge
  *   GET    /onboarding                onboarding session → Snapshot
  *   POST   /onboarding/link           onboarding session · idempotent (required) → Snapshot
  *   POST   /onboarding/complete       onboarding session · idempotent (required, replays) → ready
@@ -34,8 +36,11 @@ const { idempotent } = require('../middlewares/idempotency');
 const { validate } = require('../middlewares/validate');
 const { imageUpload } = require('../middlewares/upload');
 const { authLimiter } = require('../middlewares/rateLimit');
+const { googleSignInLimiters } = require('../middlewares/googleSignInLimiter');
+const { emailEntryLimiters } = require('../middlewares/emailEntryLimiter');
 const v = require('../validators/authValidators');
 const identity = require('../controllers/auth/identityController');
+const emailEntry = require('../controllers/auth/emailEntryController');
 const verification = require('../controllers/auth/verificationController');
 const onboarding = require('../controllers/auth/onboardingController');
 const sessions = require('../controllers/auth/sessionController');
@@ -48,9 +53,11 @@ const router = express.Router({ mergeParams: true });
 // ---- identity proof -----------------------------------------------------------
 router.post('/sign-up', authLimiter, idempotent({ required: true }), validate(v.signUp), identity.signUp);
 router.post('/sign-in', authLimiter, validate(v.signIn), identity.signIn);
-router.post('/google', idempotent({ required: true }), validate(v.google), identity.google);
-router.post('/verification/verify', idempotent({ required: true }), validate(v.verify), verification.verify);
-router.post('/verification/resend', idempotent({ required: true }), validate(v.resend), verification.resend);
+router.post('/google', ...googleSignInLimiters, idempotent({ required: true }), validate(v.google), identity.google);
+router.post('/email-status', ...emailEntryLimiters, validate(v.emailStatus), emailEntry.status);
+router.post('/sign-in/code', ...emailEntryLimiters, validate(v.signInCode), emailEntry.signInCode);
+router.post('/verification/verify', authLimiter, idempotent({ required: true }), validate(v.verify), verification.verify);
+router.post('/verification/resend', authLimiter, idempotent({ required: true }), validate(v.resend), verification.resend);
 
 // ---- onboarding (restricted session) ----------------------------------------------
 router.get('/onboarding', protectOnboarding, onboarding.get);

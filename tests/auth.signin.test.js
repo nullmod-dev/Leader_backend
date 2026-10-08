@@ -14,15 +14,18 @@ const verify = (challengeId, code = CODE) => f.api().post(`${base}/verification/
 const google = (idToken) => f.api().post(`${base}/google`).set(f.idem()).send({ idToken });
 const refresh = (refreshToken) => f.api().post(`${base}/refresh`).send({ refreshToken });
 const addr = (p = 'si') => `${f.uniq(p)}@test.leader`;
+const sidOf = (accessToken) => JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString()).sid;
 
 describe('POST /auth/sign-in', () => {
   test('finished administrator → ready with a full session', async () => {
     const tenant = await f.createTenant();
     const { account } = await f.mainAdmin(tenant);
     const res = await signIn(account.email.toUpperCase()).expect(200);
-    expect(Object.keys(res.body).sort()).toEqual(['accessToken', 'outcome', 'refreshToken']);
+    expect(Object.keys(res.body).sort()).toEqual(['accessToken', 'outcome', 'refreshToken', 'sessionId']);
     expect(res.body.outcome).toBe('ready');
+    expect(res.body.sessionId).toBe(sidOf(res.body.accessToken));
     const me = await f.api().get(`${base}/me`).set(f.auth(res.body.accessToken)).expect(200);
+    expect(me.body.sessionId).toBe(res.body.sessionId);
     expect(me.body.user).toMatchObject({ id: String(account._id), role: 'main_admin', saasTenantId: String(tenant._id) });
     expect((await f.models.Account.findById(account._id)).lastLoginAt).toBeInstanceOf(Date);
   });
@@ -126,8 +129,11 @@ describe('refresh rotation + replay', () => {
     const { body: s } = await signIn(account.email).expect(200);
 
     const r1 = await refresh(s.refreshToken).expect(200);
-    expect(Object.keys(r1.body).sort()).toEqual(['accessToken', 'refreshToken']);
+    expect(Object.keys(r1.body).sort()).toEqual(['accessToken', 'refreshToken', 'sessionId']);
     expect(r1.body.refreshToken).not.toBe(s.refreshToken);
+    // Rotation keeps the session: same stable id, same JWT sid.
+    expect(r1.body.sessionId).toBe(s.sessionId);
+    expect(sidOf(r1.body.accessToken)).toBe(s.sessionId);
     await f.api().get(`${base}/me`).set(f.auth(r1.body.accessToken)).expect(200);
 
     const replay = await refresh(s.refreshToken).expect(401);
@@ -175,9 +181,13 @@ describe('POST /auth/google (mock assertions)', () => {
     const account = await f.models.Account.findOne({ email });
     expect(account).toMatchObject({ googleSub: `mock:${email}`, emailVerified: true, status: 'pending_setup' });
 
-    // Second time: matched by googleSub, same account, no duplicate.
+    // Second time: matched by googleSub — a returning account proves its
+    // mailbox with a sign-in code first; same account, no duplicate.
     const again = await google(`mock-google:${email}`).expect(200);
-    expect(again.body.snapshot.accountId).toBe(String(account._id));
+    expect(again.body.outcome).toBe('verification_required');
+    expect(again.body.challenge.purpose).toBe('sign_in');
+    const done = await verify(again.body.challenge.challengeId).expect(200);
+    expect(done.body.snapshot.accountId).toBe(String(account._id));
     expect(await f.models.Account.countDocuments({ email })).toBe(1);
   });
 
@@ -189,10 +199,52 @@ describe('POST /auth/google (mock assertions)', () => {
     expect(done.body.outcome).toBe('onboarding');
   });
 
-  test('verified password account without google → 409 auth_method_link_required', async () => {
-    const account = await f.createAccount({ email: addr('glink') });
-    const res = await google(`mock-google:${account.email}`).expect(409);
-    expect(res.body.error.code).toBe('auth_method_link_required');
+  test('verified password account: Google → sign-in code → Google linked, password kept', async () => {
+    const account = await f.createAccount({ email: addr('glink'), role: 'super_admin', setupCompleted: true });
+    const res = await google(`mock-google:${account.email}`).expect(200);
+    expect(res.body.outcome).toBe('verification_required');
+    expect(res.body.challenge.purpose).toBe('sign_in');
+    // Nothing is linked before the code is right.
+    expect((await f.models.Account.findById(account._id)).googleSub).toBeUndefined();
+    const mail = await f.models.DevMail.findOne({ to: account.email }).sort({ createdAt: -1 });
+    expect(mail.kind).toBe('signInCode');
+
+    const wrong = await verify(res.body.challenge.challengeId, '000000').expect(422);
+    expect(wrong.body.error.code).toBe('verification_code_invalid');
+    const done = await verify(res.body.challenge.challengeId).expect(200);
+    expect(done.body.outcome).toBe('ready');
+    const fresh = await f.models.Account.findById(account._id);
+    expect(fresh.googleSub).toBe(`mock:${account.email}`);
+    expect([...fresh.methods].sort()).toEqual(['google', 'password']);
+    await signIn(account.email).expect(200);
+  });
+
+  test('an address linked to another Google identity → sign-in code, then in; the stored identity is never replaced', async () => {
+    const email = addr('gother');
+    const account = await f.createAccount({ email, googleSub: 'mock:someone-else' });
+    const res = await google(`mock-google:${email}`).expect(200);
+    expect(res.body.outcome).toBe('verification_required');
+    expect(res.body.challenge.purpose).toBe('sign_in');
+    const ch = await f.models.VerificationChallenge.findById(res.body.challenge.challengeId).select('+googleSub');
+    expect(ch.googleSub).toBeUndefined();
+    const done = await verify(res.body.challenge.challengeId).expect(200);
+    expect(done.body.outcome).toBe('onboarding');
+    const fresh = await f.models.Account.findById(account._id);
+    expect(fresh.googleSub).toBe('mock:someone-else');
+    expect([...fresh.methods]).toEqual([...account.methods]);
+    expect(await f.models.Account.countDocuments({ email })).toBe(1);
+  });
+
+  test('another Google identity still → 409 for an unverified, customer demo or super_admin account', async () => {
+    const accounts = [
+      await f.createAccount({ email: addr('gou'), googleSub: 'mock:x1', emailVerified: false, status: 'pending_setup' }),
+      await f.createAccount({ email: addr('god'), googleSub: 'mock:x2', role: 'customer_demo', setupCompleted: true }),
+      await f.createAccount({ email: addr('gos'), googleSub: 'mock:x3', role: 'super_admin', setupCompleted: true }),
+    ];
+    for (const account of accounts) {
+      const res = await google(`mock-google:${account.email}`).expect(409);
+      expect(res.body.error.code).toBe('auth_method_link_required');
+    }
   });
 
   test('claims a provisioned seat account (same _id)', async () => {
@@ -219,11 +271,16 @@ describe('POST /auth/google (mock assertions)', () => {
     await signIn(email, PW).expect(401);
   });
 
-  test('finished account signing in with its Google identity → ready', async () => {
+  test('finished account signing in with its Google identity → sign-in code, then ready', async () => {
     const email = addr('gready');
     await f.createAccount({ email, role: 'super_admin', setupCompleted: true, googleSub: `mock:${email}` });
     const res = await google(`mock-google:${email}`).expect(200);
-    expect(res.body.outcome).toBe('ready');
+    expect(res.body.outcome).toBe('verification_required');
+    expect(Object.keys(res.body.challenge).sort()).toEqual(
+      ['attemptsRemaining', 'challengeId', 'codeLength', 'expiresAt', 'maskedEmail', 'purpose', 'resendAvailableAt'],
+    );
+    const done = await verify(res.body.challenge.challengeId).expect(200);
+    expect(done.body.outcome).toBe('ready');
   });
 
   test('rejections: malformed mock → 401 google_assertion_rejected; real token without client id → 403 unsupported_auth_method', async () => {

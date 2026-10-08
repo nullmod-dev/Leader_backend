@@ -30,11 +30,10 @@ exports.signOut = catchAsync(async (req, res) => {
   res.status(204).end();
 });
 
-// POST /auth/refresh {refreshToken} → { accessToken, refreshToken }
+// POST /auth/refresh {refreshToken} → { sessionId, accessToken, refreshToken }
 exports.refresh = catchAsync(async (req, res) => {
   const token = req.body && typeof req.body.refreshToken === 'string' ? req.body.refreshToken : null;
-  const { accessToken, refreshToken } = await tokenService.refresh(token, req);
-  res.status(200).json({ accessToken, refreshToken });
+  res.status(200).json(tokenService.pair(await tokenService.refresh(token, req)));
 });
 
 // GET /auth/sessions → [Session]

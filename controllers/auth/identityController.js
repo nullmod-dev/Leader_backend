@@ -2,9 +2,11 @@
  * Sign-up, sign-in and Google — the three ways an identity proves itself.
  *
  * Enumeration safety:
- *  - sign-up answers the SAME 202 Challenge for a new, provisioned,
- *    unverified or already-verified address (the last gets a decoy that can
- *    never verify, plus a "someone tried to sign up" mail);
+ *  - sign-up answers 202 Challenge for every address. An already-verified
+ *    address gets a real SIGN-IN code (`purpose: 'sign_in'`; the typed
+ *    password is ignored, never stored) — the same code POST
+ *    /auth/sign-in/code sends. A customer demo or a super_admin still gets a
+ *    decoy that can never verify, plus a "someone tried to sign up" mail;
  *  - sign-in answers the SAME 401 invalid_credentials for an unknown
  *    address, an account without a password and a wrong password (a dummy
  *    bcrypt comparison keeps the timing alike).
@@ -51,10 +53,15 @@ const signUpOnce = async (address, password) => {
     return otpService.issueChallenge({ email: address, accountId: fresh._id });
   }
 
-  if (account.emailVerified || account.role === 'customer_demo') {
+  if (account.role === 'customer_demo' || (account.emailVerified && account.role === 'super_admin')) {
     // Decoy: same response, never verifies; the owner is told by mail.
     await dummyCompare(password);
     return otpService.issueChallenge({ email: address, decoy: true, template: 'signupAttemptOnVerified' });
+  }
+  if (account.emailVerified) {
+    // Already registered: the code signs them in; the typed password is dropped.
+    await dummyCompare(password);
+    return otpService.signInChallenge({ email: address, accountId: account._id });
   }
 
   // Provisioned/unclaimed (no methods) → attach the password (the person
@@ -122,31 +129,49 @@ exports.signIn = catchAsync(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 /**
- * Map a Google identity onto an account:
+ * Map a Google identity onto an account → `{ account, returning }`:
+ *   googleSub match, address verified      → that account, RETURNING
  *   googleSub match                        → that account
+ *   same email, linked to another google,  → that account, RETURNING, and the
+ *     verified (not super_admin)             new Google identity is NEVER
+ *                                            linked: the code alone signs in
+ *   same email, linked to another google   → 409 auth_method_link_required
+ *     (otherwise)
+ *   same email, verified                   → that account, RETURNING (Google
+ *                                            is linked once the sign-in code
+ *                                            is right — never before)
  *   same email, not yet verified           → CLAIM it (provisioned seat or an
  *                                            unverified password sign-up —
  *                                            the unproven password is dropped)
- *   same email, verified, no such google   → 409 auth_method_link_required
  *   nothing                                → create (methods ['google'])
+ *
+ * A RETURNING account is one whose mailbox this app has already proved — it
+ * has a past connection with the app — and it proves the mailbox again with a
+ * code before the session opens. A first Google sign-in does not: Google has
+ * just proved the address.
  */
 const resolveGoogleAccount = async (identity) => {
   let account = await Account.findOne({ googleSub: identity.sub }).select('+passwordHash');
   if (account) {
     if (account.role === 'customer_demo') throw new AppError('auth_method_link_required', 409, 'Sign in with your existing method first.');
-    if (identity.emailVerified && !account.emailVerified) {
+    if (account.emailVerified) return { account, returning: true };
+    if (identity.emailVerified) {
       account.emailVerified = true;
       await account.save();
       await otpService.endActiveChallenges(account._id);
     }
-    return account;
+    return { account, returning: false };
   }
 
   account = await Account.findOne({ email: identity.email }).select('+passwordHash');
   if (account) {
-    if (account.emailVerified || account.role === 'customer_demo') {
+    if (account.googleSub && account.emailVerified && account.role !== 'customer_demo' && account.role !== 'super_admin') {
+      return { account, returning: true };
+    }
+    if (account.role === 'customer_demo' || account.googleSub) {
       throw new AppError('auth_method_link_required', 409, 'This address already signs in with another method.');
     }
+    if (account.emailVerified) return { account, returning: true };
     const hadPassword = (account.methods || []).includes('password');
     account.googleSub = identity.sub;
     account.methods = [...(account.methods || []).filter((m) => m !== 'password' && m !== 'google'), 'google'];
@@ -155,7 +180,7 @@ const resolveGoogleAccount = async (identity) => {
     if (!account.name && identity.name) account.name = identity.name;
     await account.save();
     await otpService.endActiveChallenges(account._id);
-    return account;
+    return { account, returning: false };
   }
 
   const fresh = new Account({
@@ -169,17 +194,26 @@ const resolveGoogleAccount = async (identity) => {
     googleSub: identity.sub,
   });
   await fresh.save();
-  return fresh;
+  return { account: fresh, returning: false };
 };
 
 exports.google = catchAsync(async (req, res) => {
   const identity = await googleService.verify(req.body.idToken);
-  let account;
+  let resolved;
   try {
-    account = await resolveGoogleAccount(identity);
+    resolved = await resolveGoogleAccount(identity);
   } catch (err) {
     if (!isDuplicateKey(err)) throw err;
-    account = await resolveGoogleAccount(identity);
+    resolved = await resolveGoogleAccount(identity);
+  }
+  const { account, returning } = resolved;
+  if (returning) {
+    // The code goes to the account's own address. A Google identity is linked
+    // (when that code is right) only to an account that holds none yet; an
+    // account linked to another Google identity keeps it.
+    const googleSub = account.googleSub ? undefined : identity.sub;
+    res.status(200).json(await onboarding.verificationRequired(account, { purpose: 'sign_in', googleSub }));
+    return;
   }
   if (!account.emailVerified) {
     res.status(200).json(await onboarding.verificationRequired(account));

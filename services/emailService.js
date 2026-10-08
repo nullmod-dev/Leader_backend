@@ -46,6 +46,10 @@ const templates = {
     subject: 'رمز التحقق من بريدك — Leader',
     text: `رمز التحقق الخاص بك هو: ${code}\nصالح لمدة ${minutes} دقيقة.\n\nYour Leader verification code is ${code} (valid ${minutes} min).`,
   }),
+  signInCode: ({ code, minutes }) => ({
+    subject: 'رمز تسجيل الدخول — Leader',
+    text: `رمز تسجيل الدخول إلى ليدر: ${code}\nصالح لمدة ${minutes} دقيقة. إن لم تحاول تسجيل الدخول، تجاهل هذه الرسالة.\n\nYour Leader sign-in code is ${code} (valid ${minutes} min). If you did not try to sign in, ignore this message.`,
+  }),
   signupAttemptOnVerified: () => ({
     subject: 'محاولة تسجيل ببريدك — Leader',
     text: 'حاول أحدهم إنشاء حساب ليدر بهذا البريد، وهو مسجّل مسبقاً. إن كنت أنت، سجّل الدخول أو استعد كلمة المرور.\n\nSomeone tried to sign up to Leader with your address. If it was you, sign in or reset your password.',
@@ -68,6 +72,18 @@ const templates = {
   }),
 };
 
+/**
+ * Production without an SMTP host mails nothing: every verification, sign-in
+ * and reset code is issued and silently lost. Said once, when this module
+ * loads at boot, naming the setting but never a value from the config.
+ */
+const warnIfUndeliverable = ({ isProduction = config.isProduction, host = config.smtp.host, log = console.warn } = {}) => {
+  if (!isProduction || host) return false;
+  log('[mail] SMTP_HOST is not set: no email is delivered in production — verification, sign-in and reset codes are lost.');
+  return true;
+};
+warnIfUndeliverable();
+
 const sendTemplate = async (to, kind, params = {}, meta = {}) => {
   const tpl = templates[kind];
   if (!tpl) throw new Error(`unknown email template ${kind}`);
@@ -75,4 +91,4 @@ const sendTemplate = async (to, kind, params = {}, meta = {}) => {
   await send({ to, subject, text, kind, meta });
 };
 
-module.exports = { send, sendTemplate, templates };
+module.exports = { send, sendTemplate, templates, warnIfUndeliverable };

@@ -25,6 +25,7 @@ const onboard = async (email) => {
   const { body: ch } = await signUp(email).expect(202);
   const { body } = await verify(ch.challengeId).expect(200);
   expect(body.outcome).toBe('onboarding');
+  expect(body.sessionId).toEqual(expect.any(String));
   return body;
 };
 
@@ -89,8 +90,12 @@ describe('journey (a): sign-up → verify → link by Team Code → complete →
     await link(token, tenant.teamCode).expect(200);
 
     const done = await complete(token, '  هدى   السالم ').expect(200);
-    expect(Object.keys(done.body).sort()).toEqual(['accessToken', 'outcome', 'refreshToken']);
+    expect(Object.keys(done.body).sort()).toEqual(['accessToken', 'outcome', 'refreshToken', 'sessionId']);
     expect(done.body.outcome).toBe('ready');
+    // `complete` revokes the onboarding session and opens a new full one.
+    expect(done.body.sessionId).toEqual(expect.any(String));
+    expect(done.body.sessionId).not.toBe(outcome.sessionId);
+    expect((await me(done.body.accessToken).expect(200)).body.sessionId).toBe(done.body.sessionId);
 
     // The onboarding session is consumed.
     await snapshot(token).expect(401);
@@ -332,5 +337,51 @@ describe('(g) session tiers', () => {
   test('no bearer → 401 authentication_expired', async () => {
     const res = await f.api().get(`${base}/onboarding`).expect(401);
     expect(res.body.error.code).toBe('authentication_expired');
+  });
+});
+
+describe('snapshot: a Main Admin seat waiting for an unlinked account', () => {
+  test('names the role and the team, never the tenant id or the Team Code', async () => {
+    const tenant = await f.createTenant({ displayName: 'فريق الأفق' });
+    const { account, token } = await unlinkedIdentity();
+    await seatFor(tenant, account.email);
+
+    const read = await snapshot(token).expect(200);
+    expect(read.body.linkStatus).toBe('unlinked');
+    expect(read.body.pendingInvitation).toEqual({ role: 'main_admin', tenantDisplayName: 'فريق الأفق' });
+    const text = JSON.stringify(read.body);
+    expect(text).not.toContain(String(tenant._id));
+    expect(text).not.toContain(tenant.teamCode);
+
+    // Once the Team Code links it, the invitation is the tenant itself.
+    const linked = await link(token, tenant.teamCode).expect(200);
+    expect(linked.body.pendingInvitation).toBeUndefined();
+    expect(linked.body.tenant).toMatchObject({ displayName: 'فريق الأفق', role: 'main_admin' });
+  });
+
+  test('a replacement designate reads the same', async () => {
+    const tenant = await f.createTenant({ displayName: 'فريق المدى' });
+    const { account, token } = await unlinkedIdentity();
+    await seatFor(tenant, account.email, { kind: 'replacement_designate' });
+    const read = await snapshot(token).expect(200);
+    expect(read.body.pendingInvitation).toEqual({ role: 'main_admin', tenantDisplayName: 'فريق المدى' });
+  });
+
+  test('says nothing for a seat that cannot be linked, or is not this address', async () => {
+    const active = await f.createTenant();
+    const suspended = await f.createTenant({ lifecycle: { status: 'suspended', version: 2 } });
+    const cases = [
+      () => null, // no seat at all
+      (email) => seatFor(active, email, { expiresAt: new Date(Date.now() - 1000) }),
+      (email) => seatFor(active, email, { status: 'cancelled' }),
+      (email) => seatFor(suspended, email),
+      () => seatFor(active, addr('someone-else')),
+    ];
+    for (const arrange of cases) {
+      const { account, token } = await unlinkedIdentity();
+      await arrange(account.email);
+      const read = await snapshot(token).expect(200);
+      expect(read.body.pendingInvitation).toBeUndefined();
+    }
   });
 });

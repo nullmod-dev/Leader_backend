@@ -4,13 +4,14 @@
  *
  * The sign-in OUTCOME union (Flutter SignInOutcome):
  *
- *   { outcome: 'ready', accessToken, refreshToken }
+ *   { outcome: 'ready', sessionId, accessToken, refreshToken }
  *   { outcome: 'verification_required', challenge: Challenge }
- *   { outcome: 'onboarding', onboardingToken, onboardingRefreshToken, snapshot: Snapshot }
+ *   { outcome: 'onboarding', sessionId, onboardingToken, onboardingRefreshToken, snapshot: Snapshot }
  *
  * The onboarding SNAPSHOT (Flutter OnboardingSnapshot) never carries a tenant
  * id, a Team Code, counts or capabilities. `tenant` is present EXACTLY when
- * `linkStatus === 'linked'`.
+ * `linkStatus === 'linked'`; an unlinked one may carry `pendingInvitation:
+ * { role, tenantDisplayName }` for a Main Admin seat waiting for its address.
  */
 const { Authorization, SaasTenant, DemoSession } = require('../models');
 const AppError = require('../utils/appError');
@@ -46,6 +47,28 @@ const linkedTarget = async (account) => {
   return { az, tenant };
 };
 
+/**
+ * A Main Admin seat waiting for this address, as an unlinked account may be
+ * told it before typing the Team Code: the role and the team's name — never
+ * the tenant id or the code itself. Only a usable seat of an active tenant;
+ * anything else would promise a link the Team Code step then refuses.
+ */
+const pendingSeatInvitation = async (account) => {
+  const now = new Date();
+  const seats = await Authorization.find({
+    email: account.email,
+    kind: { $in: ['initial_seat', 'replacement_designate'] },
+    status: 'pending',
+  }).sort({ createdAt: -1 });
+  for (const az of seats) {
+    if (!az.isUsable(now)) continue;
+    const tenant = await SaasTenant.findById(az.tenantId);
+    if (!tenant || tenant.lifecycle.status !== 'active') continue;
+    return { role: az.role, tenantDisplayName: tenant.displayName };
+  }
+  return null;
+};
+
 /** GET /auth/onboarding body. */
 const snapshotOf = async (account) => {
   const target = await linkedTarget(account);
@@ -63,16 +86,22 @@ const snapshotOf = async (account) => {
     const suggestion = az.suggestedName || account.name;
     if (suggestion) out.displayNameSuggestion = suggestion;
     if (az.expiresAt) out.authorizationExpiresAt = az.expiresAt.toISOString();
-  } else if (account.name) {
-    out.displayNameSuggestion = account.name;
+  } else {
+    if (account.name) out.displayNameSuggestion = account.name;
+    const invitation = await pendingSeatInvitation(account);
+    if (invitation) out.pendingInvitation = invitation;
   }
   return out;
 };
 
-/** `verification_required`: end the account's other challenges and mail a new code. */
-const verificationRequired = async (account) => {
+/**
+ * `verification_required`: end the account's other challenges and mail a new
+ * code. `purpose: 'sign_in'` is a returning account's Google sign-in (see
+ * identityController.google); `googleSub` is linked when its code is right.
+ */
+const verificationRequired = async (account, { purpose = 'email', googleSub } = {}) => {
   await otpService.endActiveChallenges(account._id);
-  const ch = await otpService.issueChallenge({ email: account.email, accountId: account._id });
+  const ch = await otpService.issueChallenge({ email: account.email, accountId: account._id, purpose, googleSub });
   return { outcome: 'verification_required', challenge: otpService.serializeChallenge(ch) };
 };
 
@@ -88,19 +117,19 @@ const continueAfterAuthentication = async (account, req) => {
   await account.save();
 
   if (account.setupCompleted || account.role === 'super_admin') {
-    const { accessToken, refreshToken } = await tokenService.createSession(account, 'full', req);
-    return { outcome: 'ready', accessToken, refreshToken };
+    return { outcome: 'ready', ...tokenService.pair(await tokenService.createSession(account, 'full', req)) };
   }
-  const { accessToken, refreshToken } = await tokenService.createSession(account, 'onboarding', req);
+  const { session, accessToken, refreshToken } = await tokenService.createSession(account, 'onboarding', req);
   return {
     outcome: 'onboarding',
+    sessionId: String(session._id),
     onboardingToken: accessToken,
     onboardingRefreshToken: refreshToken,
     snapshot: await snapshotOf(account),
   };
 };
 
-/** GET /auth/me body: { user: AuthUser, access: SessionAccess }. */
+/** GET /auth/me body: { sessionId, user: AuthUser, access: SessionAccess }. */
 const meView = async (account, session) => {
   let tenant = null;
   if (account.isTenantAdmin() && account.saasTenantId) {
@@ -112,7 +141,11 @@ const meView = async (account, session) => {
   if (account.role === 'customer_demo' && account.demoSessionId) {
     demo = await DemoSession.findById(account.demoSessionId);
   }
-  return { user: serializeAuthUser(account, tenant), access: serializeSessionAccess(account, tenant, session, demo) };
+  return {
+    ...(session ? { sessionId: String(session._id) } : {}),
+    user: serializeAuthUser(account, tenant),
+    access: serializeSessionAccess(account, tenant, session, demo),
+  };
 };
 
 module.exports = {

@@ -29,7 +29,9 @@ describe('GET /auth/me', () => {
   test('{ user, access } for a Main Admin', async () => {
     const { tenant, account, token } = await signedInAdmin();
     const res = await me(token).expect(200);
-    expect(Object.keys(res.body).sort()).toEqual(['access', 'user']);
+    expect(Object.keys(res.body).sort()).toEqual(['access', 'sessionId', 'user']);
+    const list = await f.api().get(`${base}/sessions`).set(f.auth(token)).expect(200);
+    expect(res.body.sessionId).toBe(list.body.find((s) => s.current).id);
     expect(res.body.user).toMatchObject({
       id: String(account._id),
       email: account.email,

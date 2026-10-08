@@ -51,6 +51,9 @@ const freshCode = async (now = new Date()) => {
   };
 };
 
+/** The mail that carries a challenge's code, by the challenge's purpose. */
+const CODE_TEMPLATES = { email: 'verificationCode', sign_in: 'signInCode' };
+
 /** Wire shape of a challenge (Flutter VerificationChallenge). */
 const serializeChallenge = (ch) => ({
   challengeId: String(ch._id),
@@ -59,6 +62,9 @@ const serializeChallenge = (ch) => ({
   expiresAt: ch.expiresAt.toISOString(),
   resendAvailableAt: ch.resendAvailableAt.toISOString(),
   attemptsRemaining: ch.attemptsRemaining,
+  // Only a sign-in challenge names its purpose; an email-ownership challenge
+  // keeps its original shape.
+  ...(ch.purpose === 'sign_in' ? { purpose: 'sign_in' } : {}),
 });
 
 /** End every ACTIVE challenge of an account (optionally keeping one). */
@@ -76,9 +82,18 @@ const endActiveChallenges = async (accountId, { exceptId, session } = {}) => {
  * @param {string} p.email      normalized address
  * @param {string|null} p.accountId  null for a decoy
  * @param {boolean} [p.decoy]
- * @param {'verificationCode'|'signupAttemptOnVerified'|null} [p.template]
+ * @param {'email'|'sign_in'} [p.purpose]
+ * @param {string} [p.googleSub]  sign_in only: the Google subject to link on success
+ * @param {'verificationCode'|'signInCode'|'signupAttemptOnVerified'|null} [p.template]
  */
-const issueChallenge = async ({ email, accountId = null, decoy = false, template = 'verificationCode' }) => {
+const issueChallenge = async ({
+  email,
+  accountId = null,
+  decoy = false,
+  purpose = 'email',
+  googleSub,
+  template = CODE_TEMPLATES[purpose],
+}) => {
   const c = await freshCode();
   const ch = await VerificationChallenge.create({
     accountId: decoy ? null : String(accountId),
@@ -89,9 +104,11 @@ const issueChallenge = async ({ email, accountId = null, decoy = false, template
     resendAvailableAt: c.resendAvailableAt,
     attemptsRemaining: c.attemptsRemaining,
     decoy,
+    purpose,
+    googleSub,
   });
-  if (template === 'verificationCode') {
-    await emailService.sendTemplate(email, 'verificationCode', { code: c.code, minutes: c.minutes });
+  if (Object.values(CODE_TEMPLATES).includes(template)) {
+    await emailService.sendTemplate(email, template, { code: c.code, minutes: c.minutes });
   } else if (template) {
     await emailService.sendTemplate(email, template, {});
   }
@@ -110,8 +127,40 @@ const rearmChallenge = async (ch) => {
   ch.resendAvailableAt = c.resendAvailableAt;
   ch.attemptsRemaining = c.attemptsRemaining;
   await ch.save();
-  if (!ch.decoy) await emailService.sendTemplate(ch.email, 'verificationCode', { code: c.code, minutes: c.minutes });
+  if (!ch.decoy) {
+    const template = CODE_TEMPLATES[ch.purpose] || CODE_TEMPLATES.email;
+    await emailService.sendTemplate(ch.email, template, { code: c.code, minutes: c.minutes });
+  }
   return ch;
+};
+
+/**
+ * A sign-in code for an email-only sign-in (POST /auth/sign-in/code, or a
+ * sign-up on an address that is already verified). `accountId` null → a
+ * decoy that looks the same, mails nothing and never verifies.
+ *
+ * While this address's last such challenge is still inside its resend
+ * cooldown, that SAME challenge is answered again with no new mail, so
+ * repeated taps never flood the mailbox. It never carries a Google subject:
+ * an email-only sign-in links nothing.
+ */
+const signInChallenge = async ({ email, accountId = null }) => {
+  const now = new Date();
+  const decoy = !accountId;
+  const current = await VerificationChallenge.findOne({
+    email,
+    accountId: decoy ? null : String(accountId),
+    decoy,
+    purpose: 'sign_in',
+    status: 'active',
+    googleSub: { $exists: false },
+    expiresAt: { $gt: now },
+    resendAvailableAt: { $gt: now },
+  }).sort({ createdAt: -1 });
+  if (current) return current;
+  if (decoy) return issueChallenge({ email, decoy: true, purpose: 'sign_in', template: null });
+  await endActiveChallenges(accountId);
+  return issueChallenge({ email, accountId, purpose: 'sign_in' });
 };
 
 module.exports = {
@@ -122,4 +171,5 @@ module.exports = {
   endActiveChallenges,
   issueChallenge,
   rearmChallenge,
+  signInChallenge,
 };

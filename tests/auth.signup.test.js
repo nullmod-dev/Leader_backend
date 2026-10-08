@@ -39,7 +39,7 @@ describe('POST /auth/sign-up', () => {
     expect(await f.models.Session.countDocuments({ accountId: String(account._id) })).toBe(0);
   });
 
-  test('enumeration-safe: new / provisioned / unverified / verified answer the same status and shape', async () => {
+  test('new / provisioned / unverified / verified all answer 202 Challenge; the verified one is a sign-in code', async () => {
     const tenant = await f.createTenant();
     const provisionedEmail = addr('prov');
     await authorizationService.provisionSeatAccount({ tenant, name: 'مدير', email: provisionedEmail, kind: 'initial_seat' });
@@ -52,16 +52,20 @@ describe('POST /auth/sign-up', () => {
       const res = await signUp(email);
       results.push(res);
     }
-    results.forEach((res) => {
+    results.slice(0, 3).forEach((res) => {
       expect(res.status).toBe(202);
       expectChallenge(res.body);
     });
 
-    // The verified address got a decoy and a warning mail, never a code.
-    const decoy = await f.models.VerificationChallenge.findById(results[3].body.challengeId);
-    expect(decoy).toMatchObject({ decoy: true, accountId: null });
+    // The verified address got a real sign-in code, not a decoy.
+    expect(results[3].status).toBe(202);
+    const { purpose, ...rest } = results[3].body;
+    expect(purpose).toBe('sign_in');
+    expectChallenge(rest);
+    const ch = await f.models.VerificationChallenge.findById(results[3].body.challengeId);
+    expect(ch).toMatchObject({ decoy: false, accountId: String(verified._id), purpose: 'sign_in' });
     const mail = await f.models.DevMail.findOne({ to: verified.email }).sort({ createdAt: -1 });
-    expect(mail.kind).toBe('signupAttemptOnVerified');
+    expect(mail.kind).toBe('signInCode');
   });
 
   test('provisioned seat account is CLAIMED (same _id, password attached)', async () => {
@@ -89,13 +93,29 @@ describe('POST /auth/sign-up', () => {
     expect(await account.checkPassword('first-password')).toBe(false);
   });
 
-  test('verified address decoy never verifies, even with the right code', async () => {
-    const verified = await f.createAccount({ email: addr('dec') });
+  test('verified address: the sign-in code signs in and the typed password is never stored', async () => {
+    const verified = await f.createAccount({ email: addr('dec'), status: 'pending_setup' });
     const res = await signUp(verified.email).expect(202);
-    const bad = await verify(res.body.challengeId).expect(422);
-    expect(bad.body.error).toMatchObject({ code: 'verification_code_invalid', attemptsRemaining: 4 });
+    const done = await verify(res.body.challengeId).expect(200);
+    expect(done.body.outcome).toBe('onboarding');
+    expect(done.body.snapshot.accountId).toBe(String(verified._id));
     const account = await f.models.Account.findById(verified._id).select('+passwordHash');
     expect(await account.checkPassword(PW)).toBe(false); // untouched
+    expect(await account.checkPassword(f.PASSWORD)).toBe(true);
+  });
+
+  test('customer demo and super_admin addresses still get a decoy that never verifies', async () => {
+    const demo = await f.createAccount({ email: addr('ddemo'), role: 'customer_demo', setupCompleted: true });
+    const platform = await f.createAccount({ email: addr('dsa'), role: 'super_admin', setupCompleted: true });
+    for (const target of [demo, platform]) {
+      const res = await signUp(target.email).expect(202);
+      expectChallenge(res.body);
+      expect(await f.models.VerificationChallenge.findById(res.body.challengeId)).toMatchObject({ decoy: true, accountId: null });
+      const mail = await f.models.DevMail.findOne({ to: target.email }).sort({ createdAt: -1 });
+      expect(mail.kind).toBe('signupAttemptOnVerified');
+      const bad = await verify(res.body.challengeId).expect(422);
+      expect(bad.body.error).toMatchObject({ code: 'verification_code_invalid', attemptsRemaining: 4 });
+    }
   });
 
   test('password policy → 422 password_rejected with fields.password (never trimmed)', async () => {
@@ -189,7 +209,7 @@ describe('POST /auth/verification/verify', () => {
     expect(signIn.body.outcome).toBe('verification_required');
     const res = await verify(signIn.body.challenge.challengeId).expect(200);
     expect(res.body.outcome).toBe('ready');
-    expect(Object.keys(res.body).sort()).toEqual(['accessToken', 'outcome', 'refreshToken']);
+    expect(Object.keys(res.body).sort()).toEqual(['accessToken', 'outcome', 'refreshToken', 'sessionId']);
   });
 });
 
@@ -217,7 +237,7 @@ describe('POST /auth/verification/resend', () => {
   });
 
   test('decoys resend silently; ended/unknown → 409', async () => {
-    const verified = await f.createAccount({ email: addr('rsd') });
+    const verified = await f.createAccount({ email: addr('rsd'), role: 'super_admin', setupCompleted: true });
     const { body: ch } = await signUp(verified.email).expect(202);
     await f.models.VerificationChallenge.updateOne({ _id: ch.challengeId }, { $set: { resendAvailableAt: new Date(Date.now() - 1000) } });
     const before = await f.models.DevMail.countDocuments({ to: verified.email });

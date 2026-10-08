@@ -229,7 +229,7 @@ sequenceDiagram
   participant App
   participant API
   App->>API: POST /auth/sign-in {email, password}
-  API-->>App: 200 {"outcome":"ready", accessToken, refreshToken}
+  API-->>App: 200 {"outcome":"ready", sessionId, accessToken, refreshToken}
   App->>App: store both ONLY in flutter_secure_storage (mtm.auth.full_session.v1)
   App->>API: GET /auth/me  (Authorization: Bearer <access>)
   API-->>App: 200 { user: AuthUser, access: SessionAccess }
@@ -237,12 +237,15 @@ sequenceDiagram
   Note over App,API: access token lives 15 min (ACCESS_TOKEN_TTL_SECONDS)
   App->>API: any call → 401 authentication_expired
   App->>API: POST /auth/refresh {refreshToken}   (single-flight!)
-  API-->>App: 200 {accessToken, refreshToken (rotated)}
+  API-->>App: 200 {sessionId (unchanged), accessToken, refreshToken (rotated)}
   App->>API: retry the original call once
 ```
 
 **`GET /auth/me`** answers two sibling objects — map them to the existing
-`AuthUser` and `SessionAccess` models unchanged:
+`AuthUser` and `SessionAccess` models unchanged — plus `sessionId`, the stable
+server session id (also returned by every sign-in `ready`/`onboarding`
+outcome, refresh and demo start). Store it with the tokens; it is how an
+offline copy is matched to the session the phone still holds:
 
 ```json
 {
@@ -304,7 +307,7 @@ stateDiagram-v2
 The three `outcome` shapes (sign-in, Google, verify, complete):
 
 ```json
-{ "outcome": "ready", "accessToken": "…", "refreshToken": "…" }
+{ "outcome": "ready", "sessionId": "s_…", "accessToken": "…", "refreshToken": "…" }
 { "outcome": "verification_required", "challenge": { "challengeId": "vc_…", "maskedEmail": "n***@hilal-medical.org", "codeLength": 6, "expiresAt": "…Z", "resendAvailableAt": "…Z", "attemptsRemaining": 5 } }
 { "outcome": "onboarding", "onboardingToken": "…", "onboardingRefreshToken": "…",
   "snapshot": { "accountId": "u_…", "email": "…", "methods": ["password"], "accountStatus": "pending_setup",
@@ -829,7 +832,7 @@ sequenceDiagram
   alt a trial for this installId is still running
     API-->>App: 200 same demoSession + fresh credential pair (resume)
   else policy enabled
-    API-->>App: 201 {accessToken, refreshToken, demoSession}
+    API-->>App: 201 {sessionId, accessToken, refreshToken, demoSession}
   else policy disabled
     API-->>App: 403 demo_unavailable
   end
@@ -1149,7 +1152,7 @@ reads and writes**, and fills contract gaps. Things to know:
 | Inventory | no packaging fields | `unitsPerStrip`, `stripsPerCarton`, `preferredUnit`, movement `packagingUnit`, `convertedBaseUnitQuantity`, `stockBefore/After`; outflow over stock → `insufficient_stock` (not `validation`) |
 | Missing endpoints | 19 shift methods, member/item/detachment CRUD had no route | all implemented (see §11) |
 | `version` / `stale_write` | specified but no model carried it | every mutable tenant record has `version`; send it back to opt in to stale-write protection |
-| `GET /auth/me` | "AuthUser" | `{ user: AuthUser, access: SessionAccess }` — the envelope had no production path before |
+| `GET /auth/me` | "AuthUser" | `{ sessionId, user: AuthUser, access: SessionAccess }` — the envelope had no production path before |
 | Tenant feature flags | only readable via `/platform/**` | `GET /tenant/features` for the tenant app |
 | Customer Demo | contradictory (public start vs per-identity resume) | start is public; resume is keyed by an optional client `installId`; the demo session has **no** tenant capabilities server-side and every tenant endpoint refuses it — the app's in-memory `DemoWorkspace` stays the demo data source |
 | Demo control plane codes | `not_authorized` | `not_permitted` (the Core code) |

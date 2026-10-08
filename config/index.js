@@ -17,6 +17,37 @@ const bool = (value, fallback = false) => {
 const env = process.env.NODE_ENV || 'development';
 const isProduction = env === 'production';
 const isTest = env === 'test';
+// Read raw: `env` above defaults an unset NODE_ENV to development, and an unset
+// NODE_ENV must not unlock anything development-only.
+const isDevOrTest = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+
+/**
+ * The token-signing secret. The dev fallback is honoured only when NODE_ENV is
+ * explicitly "development" or "test"; anywhere else (production, staging, or
+ * NODE_ENV left unset) JWT_SECRET must be supplied, at least 32 characters and
+ * not a value this repository ships. The error names the variable, never its
+ * value.
+ */
+const DEV_JWT_SECRET = 'dev-only-secret-change-me-dev-only-secret';
+const KNOWN_JWT_SECRETS = new Set([
+  DEV_JWT_SECRET,
+  'change-me-dev-only-secret-at-least-32-characters-long',
+  'change-me-min-32-chars',
+  'test-secret-test-secret-test-secret-123456',
+]);
+const resolveJwtSecret = () => {
+  const secret = process.env.JWT_SECRET || '';
+  if (isDevOrTest) {
+    return secret || DEV_JWT_SECRET;
+  }
+  if (!secret) {
+    throw new Error('JWT_SECRET is required unless NODE_ENV is "development" or "test". Generate one with: openssl rand -hex 48');
+  }
+  if (secret.length < 32 || KNOWN_JWT_SECRETS.has(secret)) {
+    throw new Error('JWT_SECRET is too short (min 32) or a known development value. Generate one with: openssl rand -hex 48');
+  }
+  return secret;
+};
 
 const config = {
   env,
@@ -26,10 +57,11 @@ const config = {
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || `http://localhost:${num(process.env.PORT, 4000)}`).replace(/\/+$/, ''),
   mongoUri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/leader',
 
-  jwtSecret: process.env.JWT_SECRET || 'dev-only-secret-change-me-dev-only-secret',
+  jwtSecret: resolveJwtSecret(),
   accessTokenTtlSeconds: num(process.env.ACCESS_TOKEN_TTL_SECONDS, 900),
   onboardingTokenTtlSeconds: num(process.env.ONBOARDING_TOKEN_TTL_SECONDS, 1800),
-  refreshTokenTtlDays: num(process.env.REFRESH_TOKEN_TTL_DAYS, 30),
+  // Absolute: rotation never extends it, so every account signs in again after this many days.
+  refreshTokenTtlDays: num(process.env.REFRESH_TOKEN_TTL_DAYS, 7),
   resetTokenTtlMinutes: num(process.env.RESET_TOKEN_TTL_MINUTES, 15),
 
   corsOrigins: (process.env.CORS_ORIGINS || '*')
@@ -38,10 +70,11 @@ const config = {
     .filter(Boolean),
 
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
-  // Never honoured in production, whatever the env file says.
-  allowMockGoogle: !isProduction && bool(process.env.ALLOW_MOCK_GOOGLE, false),
-  devFixedOtp: isProduction ? '' : process.env.DEV_FIXED_OTP || '',
-  devMailbox: !isProduction && bool(process.env.DEV_MAILBOX, false),
+  // Honoured only when NODE_ENV is exactly "development" or "test" — never in
+  // production, staging, or with NODE_ENV unset, whatever the env file says.
+  allowMockGoogle: isDevOrTest && bool(process.env.ALLOW_MOCK_GOOGLE, false),
+  devFixedOtp: isDevOrTest ? process.env.DEV_FIXED_OTP || '' : '',
+  devMailbox: isDevOrTest && bool(process.env.DEV_MAILBOX, false),
 
   smtp: {
     host: process.env.SMTP_HOST || '',

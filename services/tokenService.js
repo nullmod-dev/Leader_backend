@@ -101,8 +101,13 @@ const createSession = async (account, scope, req, { session: dbSession } = {}) =
   return { session, accessToken: signAccess(session), refreshToken };
 };
 
-/** Credentials body shared by sign-in `ready`, refresh and demo start. */
-const pair = ({ accessToken, refreshToken }) => ({ accessToken, refreshToken });
+/**
+ * Credentials body shared by sign-in `ready`, refresh and demo start.
+ * `sessionId` is the stable Session._id (the JWT `sid`, and `id` in
+ * GET /auth/sessions): rotation never changes it, so a client can match a
+ * stored offline copy to the session it holds without reading the token.
+ */
+const pair = ({ session, accessToken, refreshToken }) => ({ sessionId: String(session._id), accessToken, refreshToken });
 
 const REFRESH_FAIL = () => new AppError('authentication_expired', 401, 'The session has ended. Sign in again.');
 

@@ -51,7 +51,7 @@ every mail lands in `GET /api/v1/dev/mailbox?to=<email>`.
 ### Outcome union (sign-in, Google, verify, complete)
 
 ```json
-{ "outcome": "ready", "accessToken": "eyJ…", "refreshToken": "q3V…" }
+{ "outcome": "ready", "sessionId": "s_…", "accessToken": "eyJ…", "refreshToken": "q3V…" }
 ```
 ```json
 { "outcome": "verification_required", "challenge": { …Challenge } }
@@ -59,6 +59,7 @@ every mail lands in `GET /api/v1/dev/mailbox?to=<email>`.
 ```json
 {
   "outcome": "onboarding",
+  "sessionId": "s_…",
   "onboardingToken": "eyJ…",
   "onboardingRefreshToken": "Zr1…",
   "snapshot": { …Snapshot }
@@ -73,6 +74,12 @@ every mail lands in `GET /api/v1/dev/mailbox?to=<email>`.
   TTL). It can only call `/auth/onboarding/**`, `/auth/sign-out` and
   `/auth/refresh`; everything else answers `403 onboarding_required`.
 - `verification_required` — no session at all.
+- `sessionId` — the stable server session id (`Session._id`, the same value
+  as the access token's `sid` and as `id` in `GET /auth/sessions`). It never
+  changes across refresh rotation; `onboarding/complete` opens a new session,
+  so it returns a new id. It is not a credential. Clients store it next to the
+  tokens to match an offline copy to the session they still hold, instead of
+  reading the (opaque) access token.
 
 ### Onboarding Snapshot
 
@@ -102,10 +109,11 @@ every mail lands in `GET /api/v1/dev/mailbox?to=<email>`.
 
 Never contains a tenant id, a Team Code, counts or capabilities.
 
-### `{ user, access }` (`GET /auth/me` and every `/me` write)
+### `{ sessionId, user, access }` (`GET /auth/me` and every `/me` write)
 
 ```json
 {
+  "sessionId": "s_…",
   "user": {
     "id": "u_demo_main",
     "name": "سلمى الحارثي",
@@ -276,7 +284,7 @@ Password: 8–128 characters taken exactly as typed (never trimmed).
 { "email": "pbea4007@mtu.edu.iq", "password": "Leader@12345" }
 ```
 ```json
-{ "outcome": "ready", "accessToken": "eyJ…", "refreshToken": "q3V…" }
+{ "outcome": "ready", "sessionId": "s_…", "accessToken": "eyJ…", "refreshToken": "q3V…" }
 ```
 
 Order of evaluation:
@@ -432,7 +440,7 @@ Simple Admins never type a Team Code — their invitation links automatically.
 |---|---|
 | Auth | onboarding session · **`Idempotency-Key` required (replays after the session was consumed)** |
 | Screen | `/account-setup` |
-| Success | **200** `{ "outcome": "ready", "accessToken", "refreshToken" }` |
+| Success | **200** `{ "outcome": "ready", "sessionId", "accessToken", "refreshToken" }` (a new `sessionId`) |
 
 ```json
 { "displayName": "هدى السالم" }
@@ -478,7 +486,7 @@ Screen: `/more` → sign out; `/link-team` "use another account".
 |---|---|
 | Auth | none (the refresh token is the credential) |
 | Screen | silent (HTTP interceptor); on failure → `/session-expired` |
-| Success | **200** `{ "accessToken", "refreshToken" }` |
+| Success | **200** `{ "sessionId", "accessToken", "refreshToken" }` (`sessionId` unchanged) |
 
 ```json
 { "refreshToken": "q3V…" }
@@ -532,7 +540,7 @@ session of the account (this one included) is revoked. **204**.
 |---|---|
 | Auth | full session — **no** MFA and **no** account-status gate, so the client can route to `/mfa-challenge` or `/account-suspended` |
 | Screen | app start / startup classifier, `/more` |
-| Success | **200** `{ user, access }` |
+| Success | **200** `{ sessionId, user, access }` |
 
 `403 onboarding_required` for an onboarding token; 401 `authentication_expired` without a live session.
 

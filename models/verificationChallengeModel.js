@@ -3,6 +3,11 @@
  * the opaque `challengeId`. A DECOY challenge (sign-up with an already-verified
  * address) has `accountId: null` and can never verify — that is what keeps
  * sign-up enumeration-safe.
+ *
+ * purpose 'sign_in' — a returning account proving its mailbox again before a
+ * Google sign-in opens a session. It may carry the Google subject to link to
+ * the account once the code is right (a verified account that so far signed
+ * in only with a password).
  */
 const mongoose = require('mongoose');
 const basePlugin = require('./plugins/base');
@@ -18,6 +23,8 @@ const challengeSchema = new mongoose.Schema(
     attemptsRemaining: { type: Number, required: true },
     status: { type: String, enum: ['active', 'verified', 'ended'], default: 'active' },
     decoy: { type: Boolean, default: false },
+    purpose: { type: String, enum: ['email', 'sign_in'], default: 'email' },
+    googleSub: { type: String, select: false },
     endedAt: Date,
   },
   { timestamps: true, collection: 'verification_challenges' },

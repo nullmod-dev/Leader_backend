@@ -24,10 +24,21 @@ const rawPassword = Joi.any();
 
 const code = Joi.string().trim().max(32).required();
 
+// A Google ID token is a compact JWS (three base64url parts). The development
+// `mock-google[-unverified]:<email>` form is printable ASCII with no spaces.
+// Anything else — control characters included — is refused before verify.
+const googleIdToken = Joi.string()
+  .trim()
+  .max(8192)
+  .pattern(/^(?:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|mock-google(?:-unverified)?:[\x21-\x7E]+)$/)
+  .required();
+
 module.exports = {
   signUp: Joi.object({ email: emailField, password: rawPassword }),
   signIn: Joi.object({ email: loginEmail, password: Joi.string().max(1024).required() }),
-  google: Joi.object({ idToken: Joi.string().max(8192).required() }),
+  google: Joi.object({ idToken: googleIdToken }),
+  emailStatus: Joi.object({ email: emailField }),
+  signInCode: Joi.object({ email: emailField }),
 
   verify: Joi.object({ challengeId: Joi.string().max(100).required(), code }),
   resend: Joi.object({ challengeId: Joi.string().max(100).required() }),

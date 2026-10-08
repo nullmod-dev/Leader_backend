@@ -31,7 +31,8 @@ describe('POST /auth/customer-demo/start', () => {
   test('public, no body → 201 credential pair + active demoSession; no tenant, no Team Code', async () => {
     const tenantsBefore = await f.models.SaasTenant.countDocuments();
     const res = await start().expect(201);
-    const { accessToken, refreshToken, demoSession } = res.body;
+    const { sessionId, accessToken, refreshToken, demoSession } = res.body;
+    expect(sessionId).toMatch(/^s_/);
     expect(accessToken).toEqual(expect.any(String));
     expect(refreshToken).toEqual(expect.any(String));
     expect(demoSession).toMatchObject({ status: 'active', policyRevision: 1, displayName: 'زائر تجريبي' });
