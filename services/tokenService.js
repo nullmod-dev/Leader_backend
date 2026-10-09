@@ -12,6 +12,10 @@
  *
  * scope: 'full' | 'onboarding'. An onboarding refresh never yields a full
  * session; a full refresh never downgrades.
+ *
+ * lifetime: `refreshExpiresAt` is the idle deadline (now + REFRESH_TOKEN_TTL_DAYS),
+ *           slid forward by every refresh and GET /auth/me but never past
+ *           `absoluteExpiresAt` (sign-in + SESSION_MAX_DAYS).
  */
 const jwt = require('jsonwebtoken');
 const config = require('../config');
@@ -22,6 +26,16 @@ const AppError = require('../utils/appError');
 const securityService = require('./securityService');
 
 const ISSUER = 'leader-api';
+const DAY = 86400000;
+const HOUR = 3600000;
+
+/** The session's absolute end (older sessions: createdAt + SESSION_MAX_DAYS). */
+const absoluteOf = (session) =>
+  session.absoluteExpiresAt || new Date(new Date(session.createdAt || Date.now()).getTime() + config.sessionMaxDays * DAY);
+
+/** The idle deadline a sign of life at `now` earns, capped by the absolute end. */
+const idleDeadline = (session, now = new Date()) =>
+  new Date(Math.min(now.getTime() + config.refreshTokenTtlDays * DAY, absoluteOf(session).getTime()));
 
 const signAccess = (session) =>
   jwt.sign(
@@ -79,16 +93,19 @@ const describeDevice = (req) => {
  * Open a new session for `account` and return the credential pair.
  * @returns {{ session, accessToken, refreshToken }}
  */
-const createSession = async (account, scope, req, { session: dbSession } = {}) => {
+const createSession = async (account, scope, req, { session: dbSession, deviceRef } = {}) => {
   const refreshToken = randomToken(48);
   const now = new Date();
+  const absoluteExpiresAt = new Date(now.getTime() + config.sessionMaxDays * DAY);
   const [session] = await Session.create(
     [
       {
         accountId: String(account._id),
         scope,
         refreshHash: sha256(refreshToken),
-        refreshExpiresAt: new Date(now.getTime() + config.refreshTokenTtlDays * 86400000),
+        absoluteExpiresAt,
+        refreshExpiresAt: new Date(Math.min(now.getTime() + config.refreshTokenTtlDays * DAY, absoluteExpiresAt.getTime())),
+        ...(deviceRef ? { deviceRef: String(deviceRef) } : {}),
         device: describeDevice(req),
         userAgent: req && req.get ? (req.get('user-agent') || '').slice(0, 200) : undefined,
         ipMasked: mask.ip(req && req.ip),
@@ -146,13 +163,25 @@ const refresh = async (refreshToken, req) => {
   const rotated = await Session.findOneAndUpdate(
     { _id: current._id, refreshHash: hash, revokedAt: { $exists: false } },
     {
-      $set: { refreshHash: sha256(nextToken), lastUsedAt: now },
+      $set: { refreshHash: sha256(nextToken), lastUsedAt: now, refreshExpiresAt: idleDeadline(current, now) },
       $push: { previousRefreshHashes: { $each: [hash], $slice: -50 } },
     },
     { new: true },
   );
   if (!rotated) throw REFRESH_FAIL();
   return { accessToken: signAccess(rotated), refreshToken: nextToken, session: rotated };
+};
+
+/**
+ * GET /auth/me is a sign of life too: slide the idle deadline. Written at most
+ * about once an hour per session.
+ */
+const slide = async (session, now = new Date()) => {
+  if (!session || !session.isLive(now)) return;
+  const next = idleDeadline(session, now);
+  if (next.getTime() - new Date(session.refreshExpiresAt).getTime() < HOUR) return;
+  await Session.updateOne({ _id: session._id, revokedAt: { $exists: false } }, { $set: { refreshExpiresAt: next } });
+  session.refreshExpiresAt = next;
 };
 
 const revokeSession = async (sessionOrId, reason = 'signed_out', { session: dbSession } = {}) => {
@@ -177,6 +206,8 @@ module.exports = {
   createSession,
   pair,
   refresh,
+  slide,
+  absoluteOf,
   revokeSession,
   revokeAllForAccount,
   describeDevice,

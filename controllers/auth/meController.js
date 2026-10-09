@@ -15,8 +15,9 @@ const respondMe = async (res, account, session) => {
   res.status(200).json(await onboarding.meView(account, session));
 };
 
-// GET /auth/me
+// GET /auth/me — also a sign of life: it slides the session's idle deadline.
 exports.get = catchAsync(async (req, res) => {
+  await tokenService.slide(req.auth.session);
   await respondMe(res, req.auth.account, req.auth.session);
 });
 
@@ -79,6 +80,7 @@ exports.changePassword = catchAsync(async (req, res) => {
   }
   const next = onboarding.assertPasswordPolicy(req.body.newPassword, 'newPassword');
   await account.setPassword(next);
+  account.passwordResetRequired = false;
   await account.save();
   await tokenService.revokeAllForAccount(account._id, 'password_changed', { exceptSessionId: session._id });
   res.status(204).end();

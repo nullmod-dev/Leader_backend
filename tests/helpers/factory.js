@@ -7,10 +7,12 @@
  *   const { tenant, main } = await f.tenantWithMainAdmin();
  *   await f.api().get('/api/v1/detachments').set(f.auth(main.token)).expect(200);
  */
+const crypto = require('crypto');
 const request = require('supertest');
 const app = require('../../app');
 const models = require('../../models');
 const tokenService = require('../../services/tokenService');
+const deviceService = require('../../services/deviceService');
 const settingsService = require('../../services/settingsService');
 const { mainAdminGrant, grantFromKeys, SUB_ADMIN_PRESET } = require('../../config/capabilities');
 const { generateTeamCode } = require('../../utils/normalize');
@@ -24,6 +26,25 @@ const auth = (token) => ({ Authorization: `Bearer ${token}` });
 const idem = () => ({ 'Idempotency-Key': uuidV7() });
 const uniq = (p = '') => `${p}${ulid().slice(-8).toLowerCase()}`;
 const fakeReq = { get: () => 'jest', ip: '127.0.0.1' };
+
+/**
+ * Device trust. Every account `createAccount` makes already trusts DEVICE_ID
+ * (pass `trustedDevice: false` for an account with no device record), so a
+ * sign-in sending `device()` opens a session as it did before device trust.
+ */
+const DEVICE_ID = '0f6d2c9e-4b1a-4c3d-9e8f-1a2b3c4d5e6f';
+const newDeviceId = () => crypto.randomUUID();
+const device = (id = DEVICE_ID) => ({ 'X-Device-Id': id });
+const trustDevice = (account, id = DEVICE_ID, fields = {}) =>
+  models.Device.create({
+    accountId: String(account._id),
+    idHash: deviceService.hashId(id),
+    status: 'trusted',
+    label: 'jest',
+    verifiedAt: new Date(),
+    approvedAt: new Date(),
+    ...fields,
+  });
 
 const PLANS = [
   {
@@ -60,7 +81,7 @@ const login = async (account, scope = 'full') => {
   return { account, session, token: accessToken, refreshToken };
 };
 
-const createAccount = async (overrides = {}) => {
+const createAccount = async ({ trustedDevice = true, ...overrides } = {}) => {
   const account = new models.Account({
     email: `${uniq('user')}@test.leader`,
     name: 'Test User',
@@ -71,6 +92,7 @@ const createAccount = async (overrides = {}) => {
   });
   await account.setPassword(overrides.password || PASSWORD);
   await account.save();
+  if (trustedDevice) await trustDevice(account);
   return account;
 };
 
@@ -223,6 +245,10 @@ const setFeature = async (tenant, key, enabled) => {
 };
 
 module.exports = {
+  DEVICE_ID,
+  newDeviceId,
+  device,
+  trustDevice,
   PASSWORD,
   PLANS,
   api,

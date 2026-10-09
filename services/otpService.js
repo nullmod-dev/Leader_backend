@@ -52,7 +52,7 @@ const freshCode = async (now = new Date()) => {
 };
 
 /** The mail that carries a challenge's code, by the challenge's purpose. */
-const CODE_TEMPLATES = { email: 'verificationCode', sign_in: 'signInCode' };
+const CODE_TEMPLATES = { email: 'verificationCode', sign_in: 'signInCode', new_device: 'newDeviceCode' };
 
 /** Wire shape of a challenge (Flutter VerificationChallenge). */
 const serializeChallenge = (ch) => ({
@@ -62,9 +62,9 @@ const serializeChallenge = (ch) => ({
   expiresAt: ch.expiresAt.toISOString(),
   resendAvailableAt: ch.resendAvailableAt.toISOString(),
   attemptsRemaining: ch.attemptsRemaining,
-  // Only a sign-in challenge names its purpose; an email-ownership challenge
-  // keeps its original shape.
-  ...(ch.purpose === 'sign_in' ? { purpose: 'sign_in' } : {}),
+  // A sign-in or new-device challenge names its purpose; an email-ownership
+  // challenge keeps its original shape.
+  ...(ch.purpose === 'sign_in' || ch.purpose === 'new_device' ? { purpose: ch.purpose } : {}),
 });
 
 /** End every ACTIVE challenge of an account (optionally keeping one). */
@@ -82,7 +82,7 @@ const endActiveChallenges = async (accountId, { exceptId, session } = {}) => {
  * @param {string} p.email      normalized address
  * @param {string|null} p.accountId  null for a decoy
  * @param {boolean} [p.decoy]
- * @param {'email'|'sign_in'} [p.purpose]
+ * @param {'email'|'sign_in'|'new_device'} [p.purpose]
  * @param {string} [p.googleSub]  sign_in only: the Google subject to link on success
  * @param {'verificationCode'|'signInCode'|'signupAttemptOnVerified'|null} [p.template]
  */

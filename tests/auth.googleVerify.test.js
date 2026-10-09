@@ -16,7 +16,7 @@ const googleService = require('../services/googleService');
 const base = '/api/v1/auth';
 const CLIENT_ID = 'web-client-test.apps.googleusercontent.com';
 const TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl';
-const google = (idToken) => f.api().post(`${base}/google`).set(f.idem()).send({ idToken });
+const google = (idToken) => f.api().post(`${base}/google`).set(f.device()).set(f.idem()).send({ idToken });
 const addr = (p = 'gv') => `${f.uniq(p)}@test.leader`;
 
 const claims = (overrides = {}) => ({
@@ -79,7 +79,14 @@ describe('POST /auth/google (real tokens)', () => {
   test('a verified new identity → onboarding', async () => {
     const payload = claims();
     issue(payload);
-    const res = await google(TOKEN).expect(200);
+    const first = await google(TOKEN).expect(200);
+    expect(first.body.challenge.purpose).toBe('new_device');
+    const res = await f.api()
+      .post(`${base}/verification/verify`)
+      .set(f.device())
+      .set(f.idem())
+      .send({ challengeId: first.body.challenge.challengeId, code: '246810' })
+      .expect(200);
     expect(res.body.outcome).toBe('onboarding');
     expect(await f.models.Account.countDocuments({ googleSub: payload.sub })).toBe(1);
   });

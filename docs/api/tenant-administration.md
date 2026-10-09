@@ -72,7 +72,7 @@ Content-Type: application/json
 
 ```json
 {
-  "name": "فرق الهلال الطبية",
+  "name": "alwalla",
   "legalName": "جمعية فرق الهلال الطبية",
   "address": "دمشق — المزة",
   "emailPublic": "info@hilal-medical.org",
@@ -110,7 +110,7 @@ counted in the tenant's `storage_bytes` (plan limit checked first →
 {
   "organization": {
     "tenantId": "saas_hilal",
-    "displayName": "فرق الهلال الطبية",
+    "displayName": "alwalla",
     "lifecycleStatus": "active",
     "createdAt": "2026-01-10T08:00:00.000Z"
   },
@@ -317,7 +317,7 @@ stream `tenant` for THIS tenant, newest first.
       "action": "admin_invitation_created",
       "category": "admin_management",
       "target": { "type": "simple_admin_invitation", "id": "az_01J…", "displayName": "نورة العتيبي" },
-      "tenant": { "id": "saas_hilal", "displayName": "فرق الهلال الطبية", "isDeleted": false },
+      "tenant": { "id": "saas_hilal", "displayName": "alwalla", "isDeleted": false },
       "changes": [
         { "field": "invitation_status", "after": { "kind": "text", "value": "pending" } },
         { "field": "capability_grant", "after": { "kind": "text", "value": "detachment.view,member.view" } }

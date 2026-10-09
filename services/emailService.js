@@ -50,6 +50,18 @@ const templates = {
     subject: 'رمز تسجيل الدخول — Leader',
     text: `رمز تسجيل الدخول إلى ليدر: ${code}\nصالح لمدة ${minutes} دقيقة. إن لم تحاول تسجيل الدخول، تجاهل هذه الرسالة.\n\nYour Leader sign-in code is ${code} (valid ${minutes} min). If you did not try to sign in, ignore this message.`,
   }),
+  newDeviceCode: ({ code, minutes }) => ({
+    subject: 'رمز تأكيد الجهاز — Leader',
+    text: `رمز تأكيد الدخول إلى ليدر من هذا الجهاز: ${code}\nصالح لمدة ${minutes} دقيقة. إن لم تحاول تسجيل الدخول، فكلمة مرورك قد تكون معروفة لغيرك: غيّرها الآن.\n\nYour Leader device code is ${code} (valid ${minutes} min). If you did not try to sign in, change your password now.`,
+  }),
+  newDeviceSignedIn: ({ label, at }) => ({
+    subject: 'دخول من جهاز جديد — Leader',
+    text: `سُجّل الدخول إلى حسابك في ليدر من جهاز جديد (${label}) في ${at}.\nإن كان هذا أنت فلا تفعل شيئاً. وإن لم يكن أنت، افتح ليدر على أحد أجهزتك الموثوقة واختر «لست أنا».\n\nA new device (${label}) signed in to your Leader account at ${at}. If it was not you, open Leader on one of your trusted devices and choose "Not me".`,
+  }),
+  deviceDeniedAlert: ({ name, email, label }) => ({
+    subject: 'تنبيه أمني: جهاز مرفوض — Leader',
+    text: `أكّد ${name} (${email}) أن جهازاً جديداً (${label}) سجّل الدخول إلى حسابه ليس جهازه. حُظر ذلك الجهاز وأُنهيت كل جلسات الحساب.\n\n${name} (${email}) reported that a new device (${label}) that signed in to their Leader account was not theirs. That device is blocked and every session of the account has ended.`,
+  }),
   signupAttemptOnVerified: () => ({
     subject: 'محاولة تسجيل ببريدك — Leader',
     text: 'حاول أحدهم إنشاء حساب ليدر بهذا البريد، وهو مسجّل مسبقاً. إن كنت أنت، سجّل الدخول أو استعد كلمة المرور.\n\nSomeone tried to sign up to Leader with your address. If it was you, sign in or reset your password.',

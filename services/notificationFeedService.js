@@ -37,8 +37,10 @@ const STATE_CAP = 5000;
 const nid = (kind, recordId) => `${kind}:${recordId}`;
 
 /** The caller's stored read/cleared sets (empty when never written). */
-const stateOf = async (accountId) => {
-  const st = await NotificationState.findOne({ accountId: String(accountId) }).lean();
+const stateOf = async (accountId, tenantId) => {
+  // tenantId in the filter: NotificationState is tenant-plane data, and the
+  // data-layer guard (models/plugins/tenantScope) refuses a query without it.
+  const st = await NotificationState.findOne({ accountId: String(accountId), tenantId: String(tenantId) }).lean();
   return { readIds: st ? st.readIds || [] : [], clearedIds: st ? st.clearedIds || [] : [] };
 };
 
@@ -147,7 +149,7 @@ const feed = async ({ tenant, account, grant, detachment, tz, now = new Date() }
       .lean(),
     stockOn ? InventoryItem.find({ tenantId, detachmentId }).select('name level currentStock expiresOn').lean() : [],
     announcementsOn ? Announcement.find({ tenantId, detachmentIds: detachmentId, publishedAt: { $lte: now } }).select('text publishedAt').lean() : [],
-    stateOf(account._id),
+    stateOf(account._id, tenantId),
   ]);
 
   const read = new Set(state.readIds);
@@ -189,17 +191,18 @@ const unreadCount = (rows) => rows.filter((r) => r.kind !== 'announcement' && !r
 const addIds = async ({ accountId, tenantId, field, ids }) => {
   const list = [...new Set(ids.map(String))];
   const key = String(accountId);
-  const exists = await NotificationState.exists({ accountId: key });
+  const tenant = String(tenantId);
+  const exists = await NotificationState.exists({ accountId: key, tenantId: tenant });
   if (!exists) {
     try {
-      await NotificationState.create({ accountId: key, tenantId: String(tenantId) });
+      await NotificationState.create({ accountId: key, tenantId: tenant });
     } catch (e) {
       if (!e || e.code !== 11000) throw e; // a concurrent first write created it
     }
   }
   const literal = { $literal: list };
   const doc = await NotificationState.findOneAndUpdate(
-    { accountId: key },
+    { accountId: key, tenantId: tenant },
     [
       {
         $set: {

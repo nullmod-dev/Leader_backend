@@ -8,10 +8,10 @@ const base = '/api/v1/auth';
 const CODE = '246810';
 const PW = 'Str0ng-passw0rd';
 
-const signIn = (email, password = f.PASSWORD) => f.api().post(`${base}/sign-in`).send({ email, password });
+const signIn = (email, password = f.PASSWORD) => f.api().post(`${base}/sign-in`).set(f.device()).send({ email, password });
 const signUp = (email, password = PW) => f.api().post(`${base}/sign-up`).set(f.idem()).send({ email, password });
-const verify = (challengeId, code = CODE) => f.api().post(`${base}/verification/verify`).set(f.idem()).send({ challengeId, code });
-const google = (idToken) => f.api().post(`${base}/google`).set(f.idem()).send({ idToken });
+const verify = (challengeId, code = CODE) => f.api().post(`${base}/verification/verify`).set(f.device()).set(f.idem()).send({ challengeId, code });
+const google = (idToken) => f.api().post(`${base}/google`).set(f.device()).set(f.idem()).send({ idToken });
 const refresh = (refreshToken) => f.api().post(`${base}/refresh`).send({ refreshToken });
 const addr = (p = 'si') => `${f.uniq(p)}@test.leader`;
 const sidOf = (accessToken) => JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString()).sid;
@@ -173,22 +173,27 @@ describe('POST /auth/sign-out', () => {
 });
 
 describe('POST /auth/google (mock assertions)', () => {
-  test('new verified identity → account created (methods [google]) → onboarding', async () => {
+  test('new verified identity → account created (methods [google]) → first-device code → onboarding', async () => {
     const email = addr('gnew');
-    const res = await google(`mock-google:${email}`).expect(200);
+    const first = await google(`mock-google:${email}`).expect(200);
+    expect(first.body.outcome).toBe('verification_required');
+    expect(first.body.challenge.purpose).toBe('new_device');
+    const res = await verify(first.body.challenge.challengeId).expect(200);
     expect(res.body.outcome).toBe('onboarding');
     expect(res.body.snapshot.methods).toEqual(['google']);
     const account = await f.models.Account.findOne({ email });
     expect(account).toMatchObject({ googleSub: `mock:${email}`, emailVerified: true, status: 'pending_setup' });
 
-    // Second time: matched by googleSub — a returning account proves its
-    // mailbox with a sign-in code first; same account, no duplicate.
+    // Second time on the same (now trusted) device: matched by googleSub, no
+    // code; same account, no duplicate.
     const again = await google(`mock-google:${email}`).expect(200);
-    expect(again.body.outcome).toBe('verification_required');
-    expect(again.body.challenge.purpose).toBe('sign_in');
-    const done = await verify(again.body.challenge.challengeId).expect(200);
-    expect(done.body.snapshot.accountId).toBe(String(account._id));
+    expect(again.body.outcome).toBe('onboarding');
+    expect(again.body.snapshot.accountId).toBe(String(account._id));
     expect(await f.models.Account.countDocuments({ email })).toBe(1);
+
+    // On another device a returning account proves its mailbox with a sign-in code.
+    const other = await f.api().post(`${base}/google`).set(f.device(f.newDeviceId())).set(f.idem()).send({ idToken: `mock-google:${email}` }).expect(200);
+    expect(other.body.challenge.purpose).toBe('sign_in');
   });
 
   test('unverified Google identity → verification_required, then the code finishes it', async () => {
@@ -251,7 +256,9 @@ describe('POST /auth/google (mock assertions)', () => {
     const tenant = await f.createTenant();
     const email = addr('gprov');
     const { account } = await authorizationService.provisionSeatAccount({ tenant, name: 'هدى السالم', email, kind: 'initial_seat' });
-    const res = await google(`mock-google:${email}`).expect(200);
+    const first = await google(`mock-google:${email}`).expect(200);
+    expect(first.body.challenge.purpose).toBe('new_device');
+    const res = await verify(first.body.challenge.challengeId).expect(200);
     expect(res.body.outcome).toBe('onboarding');
     expect(res.body.snapshot.accountId).toBe(String(account._id));
     const fresh = await f.models.Account.findById(account._id);
@@ -262,7 +269,9 @@ describe('POST /auth/google (mock assertions)', () => {
   test('claims an unverified password sign-up and drops the unproven password', async () => {
     const email = addr('gclaim');
     const { body: ch } = await signUp(email).expect(202);
-    const res = await google(`mock-google:${email}`).expect(200);
+    const first = await google(`mock-google:${email}`).expect(200);
+    expect(first.body.challenge.purpose).toBe('new_device');
+    const res = await verify(first.body.challenge.challengeId).expect(200);
     expect(res.body.outcome).toBe('onboarding');
     const fresh = await f.models.Account.findOne({ email }).select('+passwordHash');
     expect(fresh.methods).toEqual(['google']);
@@ -271,15 +280,28 @@ describe('POST /auth/google (mock assertions)', () => {
     await signIn(email, PW).expect(401);
   });
 
-  test('finished account signing in with its Google identity → sign-in code, then ready', async () => {
-    const email = addr('gready');
+  test('finished account, its Google identity, a trusted device → ready with no code', async () => {
+    const email = addr('gtrusted');
     await f.createAccount({ email, role: 'super_admin', setupCompleted: true, googleSub: `mock:${email}` });
     const res = await google(`mock-google:${email}`).expect(200);
+    expect(res.body.outcome).toBe('ready');
+  });
+
+  test('finished account signing in with its Google identity on a new device → sign-in code, then ready', async () => {
+    const email = addr('gready');
+    await f.createAccount({ email, role: 'super_admin', setupCompleted: true, googleSub: `mock:${email}` });
+    const other = f.device(f.newDeviceId());
+    const res = await f.api().post(`${base}/google`).set(other).set(f.idem()).send({ idToken: `mock-google:${email}` }).expect(200);
     expect(res.body.outcome).toBe('verification_required');
     expect(Object.keys(res.body.challenge).sort()).toEqual(
       ['attemptsRemaining', 'challengeId', 'codeLength', 'expiresAt', 'maskedEmail', 'purpose', 'resendAvailableAt'],
     );
-    const done = await verify(res.body.challenge.challengeId).expect(200);
+    const done = await f.api()
+      .post(`${base}/verification/verify`)
+      .set(other)
+      .set(f.idem())
+      .send({ challengeId: res.body.challenge.challengeId, code: CODE })
+      .expect(200);
     expect(done.body.outcome).toBe('ready');
   });
 

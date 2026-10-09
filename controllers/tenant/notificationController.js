@@ -39,5 +39,5 @@ exports.markCleared = catchAsync(async (req, res) => {
 
 // GET /notifications/state
 exports.state = catchAsync(async (req, res) => {
-  res.json(await feedService.stateOf(req.auth.account._id));
+  res.json(await feedService.stateOf(req.auth.account._id, req.tenantId));
 });

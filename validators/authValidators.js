@@ -50,7 +50,6 @@ module.exports = {
   changePassword: Joi.object({ currentPassword: Joi.string().allow('').max(1024).required(), newPassword: rawPassword }),
 
   mfaCode: Joi.object({ code }),
-  newDevice: Joi.object({ itsMe: Joi.boolean().required() }),
 
   resetRequest: Joi.object({ email: emailField }),
   resetVerify: Joi.object({ email: loginEmail, code }),

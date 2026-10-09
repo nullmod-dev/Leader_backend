@@ -209,7 +209,7 @@ You cannot suspend yourself. Audit `platform_admin_suspended`.
   "role": "main_admin",
   "status": "active",
   "saasTenantId": "saas_hilal",
-  "tenantName": "فرق الهلال الطبية",
+  "tenantName": "alwalla",
   "emailVerified": true,
   "methods": ["password"],
   "lastLoginAt": "2026-09-28T08:00:00.000Z",

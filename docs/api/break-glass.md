@@ -22,7 +22,7 @@ Code: `routes/platform/breakGlassRoutes.js` → `controllers/platform/breakGlass
 {
   "id": "bg_01J8…",
   "revision": 1,
-  "tenant": { "tenantId": "saas_hilal", "displayName": "فرق الهلال الطبية" },
+  "tenant": { "tenantId": "saas_hilal", "displayName": "alwalla" },
   "scopes": ["tenant_operational_read"],
   "reason": "تعذّر على قائد الفريق الوصول إلى سجلات المناوبات",
   "initiator": { "accountId": "u_demo_platform", "displayName": "مدير منصة ليدر" },
@@ -137,7 +137,7 @@ revoking admin as actor. Same `404 / 409` codes as `end` (without the session ch
 | `workshops` | — | `Workshop` (organisers without phones) | `workshops` |
 
 ```json
-{ "grantId": "bg_…", "tenant": { "tenantId": "saas_hilal", "displayName": "فرق الهلال الطبية" }, "items": [ … ] }
+{ "grantId": "bg_…", "tenant": { "tenantId": "saas_hilal", "displayName": "alwalla" }, "items": [ … ] }
 ```
 
 Shapes are exactly the tenant plane's (`services/serializers.js`). Every read is

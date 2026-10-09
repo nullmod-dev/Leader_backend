@@ -8,6 +8,15 @@
  * (API_CONTRACT.md → Token refresh — Point 18B).
  *
  * `scope` is the session tier: `full` or `onboarding` (restricted).
+ *
+ * Lifetime: `refreshExpiresAt` is the IDLE deadline. Each successful refresh
+ * and each GET /auth/me slides it to now + REFRESH_TOKEN_TTL_DAYS, never past
+ * `absoluteExpiresAt` (sign-in + SESSION_MAX_DAYS). A session created before
+ * `absoluteExpiresAt` existed takes createdAt + SESSION_MAX_DAYS.
+ *
+ * `deviceRef` is the Device the session was opened on (absent on sessions
+ * that predate device trust until their first request carrying X-Device-Id,
+ * and on customer-demo sessions).
  */
 const mongoose = require('mongoose');
 const basePlugin = require('./plugins/base');
@@ -19,6 +28,8 @@ const sessionSchema = new mongoose.Schema(
     refreshHash: { type: String, required: true },
     previousRefreshHashes: { type: [String], default: [] },
     refreshExpiresAt: { type: Date, required: true },
+    absoluteExpiresAt: Date,
+    deviceRef: { type: String, index: true },
     revokedAt: Date,
     revokeReason: String,
 
@@ -32,7 +43,6 @@ const sessionSchema = new mongoose.Schema(
     mfaVerified: { type: Boolean, default: false },
     // "Recent authentication" evidence for privileged platform commands.
     authenticatedAt: { type: Date, default: Date.now },
-    newDeviceConfirmed: { type: Boolean, default: false },
   },
   { timestamps: true, collection: 'sessions' },
 );

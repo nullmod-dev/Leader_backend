@@ -29,9 +29,19 @@ app.use(
 );
 app.use(
   cors({
-    origin: config.corsOrigins.includes('*') ? '*' : config.corsOrigins,
+    // `false` (no list) answers no CORS headers at all, so a browser on
+    // another origin is refused; the mobile app never sends an Origin.
+    origin: config.corsOrigins.includes('*') ? '*' : config.corsOrigins.length ? config.corsOrigins : false,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Client-Version', 'X-Request-Id', 'X-Device-Name'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Idempotency-Key',
+      'X-Client-Version',
+      'X-Request-Id',
+      'X-Device-Name',
+      'X-Device-Id',
+    ],
     exposedHeaders: ['X-Request-Id', 'Retry-After', 'Idempotent-Replayed'],
   }),
 );

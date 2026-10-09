@@ -15,8 +15,8 @@ const PW = 'Str0ng-passw0rd';
 
 const status = (email) => f.api().post(`${base}/email-status`).send({ email });
 const codeFor = (email) => f.api().post(`${base}/sign-in/code`).send({ email });
-const verify = (challengeId, code = CODE) => f.api().post(`${base}/verification/verify`).set(f.idem()).send({ challengeId, code });
-const google = (idToken) => f.api().post(`${base}/google`).set(f.idem()).send({ idToken });
+const verify = (challengeId, code = CODE) => f.api().post(`${base}/verification/verify`).set(f.device()).set(f.idem()).send({ challengeId, code });
+const google = (idToken) => f.api().post(`${base}/google`).set(f.device()).set(f.idem()).send({ idToken });
 const me = (token) => f.api().get(`${base}/me`).set(f.auth(token));
 const addr = (p = 'ee') => `${f.uniq(p)}@test.leader`;
 

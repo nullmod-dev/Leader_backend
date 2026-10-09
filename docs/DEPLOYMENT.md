@@ -30,11 +30,36 @@ The ones that decide whether production is safe:
 |---|---|
 | `NODE_ENV` | exactly `production`. Anything other than `development`/`test` switches off `DEV_FIXED_OTP`, `ALLOW_MOCK_GOOGLE` and `DEV_MAILBOX`. |
 | `JWT_SECRET` | required outside development/test, 32+ characters, not a dev value — or the API refuses to boot. |
-| `REFRESH_TOKEN_TTL_DAYS` | the absolute session lifetime. The app's offline copy trusts **7** days; a larger value means a session keeps working online after the phone stopped opening offline. |
+| `REFRESH_TOKEN_TTL_DAYS` | **7** — the idle limit; every refresh and `GET /auth/me` slides it. It matches the app's offline window (7 days from the last server contact). |
+| `SESSION_MAX_DAYS` | **30** — the absolute limit from sign-in, however active the session. |
+| `TRUSTED_DEVICES_MAX`, `NEW_DEVICE_RESTRICT_HOURS` | 3 and 6 by default (device trust). |
 | `MONGODB_URI` | the `leader_app` user on the `leader` database. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | without them no code email is delivered, so sign-up, reset and the returning-Google sign-in code cannot complete. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | without them no code email is delivered, so sign-up, reset, the returning-Google sign-in code **and every sign-in on a new device** cannot complete. |
 | `GOOGLE_CLIENT_ID` | required for real Google sign-in. |
 | `RATE_LIMIT_ENABLED` | `true`. |
+| `CORS_ORIGINS` | **empty** (or the one web dashboard origin). An old file copied from the example may still say `*`. Unset, production allows no browser origin; the mobile app is unaffected. |
+| `TENANT_SCOPE_MODE` | `log` now, `enforce` after the audit below. |
+| `TENANT_SCOPE_LOG` | optional file for the guard's reports, e.g. `/var/log/leader/tenant-scope.log` (writable by `leader`). |
+
+### Turning on the data-layer team guard
+
+`models/plugins/tenantScope.js` refuses any database operation on team data
+that does not filter on one team. Its code default is `off`.
+
+1. Set `TENANT_SCOPE_MODE=log` (and optionally `TENANT_SCOPE_LOG`), restart.
+   Nothing is refused; every violation is reported and raises a
+   `tenant_scope_violation` security signal on the Super Admin Security page.
+2. Use the app normally for about a week. Each report names the model, the
+   operation and the filter keys; the stack is in `TENANT_SCOPE_LOG`.
+3. Fix each call site (add the team to the filter) or, when crossing teams
+   is the point (platform reports, final deletion, jobs), mark the query
+   `.crossTenant('<reason>')`.
+4. When a week passes with no new report, set `TENANT_SCOPE_MODE=enforce`.
+
+Audit so far (2026-10-09): the full Jest suite in `log` mode found three
+production call sites, now fixed — notification read state, the stale-write
+re-read, and platform analytics (marked cross-team). The other reports came
+from test assertions that query models directly.
 
 Check a value's presence without printing it:
 
@@ -42,6 +67,26 @@ Check a value's presence without printing it:
 ssh -p 22720 root@5.189.132.216 \
   "awk -F= '/^[A-Z_]+=/{print \$1, (length(\$2) ? \"set\" : \"EMPTY\")}' /opt/leader/backend/config.env"
 ```
+
+## PRE-DEPLOY CHECKLIST — device trust release
+
+Do not deploy the device-trust release until every box is ticked.
+
+- [ ] **Email works on the server.** SMTP (or Resend through SMTP) is set and a
+      test code reached a real inbox. Without it every existing user who signs
+      in on a new phone — and every first sign-in after the update — is locked
+      out: the new-device code never arrives.
+- [ ] **Forced Upgrade minimum raised** to the first app build that sends
+      `X-Device-Id`. An older build cannot sign in (`400 device_id_required`).
+- [ ] **TTL values set on the server:** `REFRESH_TOKEN_TTL_DAYS=7`,
+      `SESSION_MAX_DAYS=30` (the old file may still say 30 for the refresh
+      TTL, which would make the idle limit equal the absolute one).
+- [ ] Optional: `TRUSTED_DEVICES_MAX` / `NEW_DEVICE_RESTRICT_HOURS` if the
+      defaults (3 / 6) change.
+
+Sessions that exist at deploy time keep working: the first request a
+signed-in app makes with `X-Device-Id` registers that phone as a trusted
+device (up to the limit), with no code.
 
 ## Deploy order
 
@@ -71,9 +116,9 @@ diff -q /tmp/local.sums /tmp/server.sums && echo "server = 67d170e"
 # 2. JWT_SECRET is 32+ characters (yes/no only). "no" = STOP: the new code refuses to boot.
 ssh $HOST "awk 'index(\$0,\"JWT_SECRET=\")==1{v=substr(\$0,12); print (length(v)>=32 ? \"yes\" : \"no\")}' /opt/leader/backend/config.env"
 
-# 3. Non-secret values to report: NODE_ENV (must be production) and REFRESH_TOKEN_TTL_DAYS.
-#    Do not change REFRESH_TOKEN_TTL_DAYS without the owner's ruling (7 matches the app's offline window).
-ssh $HOST "grep -E '^(NODE_ENV|REFRESH_TOKEN_TTL_DAYS)=' /opt/leader/backend/config.env"
+# 3. Non-secret values to report: NODE_ENV (must be production), REFRESH_TOKEN_TTL_DAYS (7)
+#    and SESSION_MAX_DAYS (30). Change them only by the owner's ruling.
+ssh $HOST "grep -E '^(NODE_ENV|REFRESH_TOKEN_TTL_DAYS|SESSION_MAX_DAYS|SMTP_HOST)=' /opt/leader/backend/config.env"
 ```
 
 ## Update procedure (from the development machine)
@@ -154,8 +199,9 @@ rollback keeps them in `backend.failed` — move them back if any were added.
   every client then looks like `127.0.0.1` and shares one IP rate-limit
   budget, and masked IPs in the session list are wrong. Set it to the proxy
   hop count only when a proxy is actually in front.
-- **Email is not configured on the server.** Returning Google users get an
-  email code and cannot finish without SMTP.
+- **Email is not configured on the server.** Returning Google users on a new
+  device and every new-device sign-in need an email code and cannot finish
+  without SMTP — see the PRE-DEPLOY CHECKLIST.
 - **`REFRESH_TOKEN_TTL_DAYS`** above 7 makes online and offline lifetimes
   disagree (see above).
 - **Offline sign-out** clears the phone only; the server session lives until

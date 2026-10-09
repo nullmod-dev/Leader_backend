@@ -8,6 +8,10 @@
  * Google sign-in opens a session. It may carry the Google subject to link to
  * the account once the code is right (a verified account that so far signed
  * in only with a password).
+ *
+ * purpose 'new_device' — a password or Google sign-in from a device this
+ * account does not trust yet (or the account's very first device): the code
+ * proves the mailbox before the session opens on that device.
  */
 const mongoose = require('mongoose');
 const basePlugin = require('./plugins/base');
@@ -23,7 +27,7 @@ const challengeSchema = new mongoose.Schema(
     attemptsRemaining: { type: Number, required: true },
     status: { type: String, enum: ['active', 'verified', 'ended'], default: 'active' },
     decoy: { type: Boolean, default: false },
-    purpose: { type: String, enum: ['email', 'sign_in'], default: 'email' },
+    purpose: { type: String, enum: ['email', 'sign_in', 'new_device'], default: 'email' },
     googleSub: { type: String, select: false },
     endedAt: Date,
   },

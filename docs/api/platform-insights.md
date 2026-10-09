@@ -122,7 +122,7 @@ recent activity and storage usage.
   ],
   "recentActivity": [
     { "id": "audit_01J…", "type": "demo_started", "title": "بدأت تجربة عميل جديدة", "description": "تجربة بسيطة", "occurredAt": "2026-09-28T09:52:00.000Z" },
-    { "id": "audit_01J…", "type": "tenant_created", "title": "تسجيل فريق جديد", "description": "«فرق الهلال الطبية»", "occurredAt": "2026-09-27T12:00:00.000Z" }
+    { "id": "audit_01J…", "type": "tenant_created", "title": "تسجيل فريق جديد", "description": "«alwalla»", "occurredAt": "2026-09-27T12:00:00.000Z" }
   ],
   "usage": { "storageUsedBytes": 19327352832, "storageAllowanceBytes": 107374182400 }
 }
@@ -212,7 +212,7 @@ Not audit, no history, no acknowledgement.
       "title": "إعادة استخدام رمز جلسة سابق",
       "description": "رُصدت محاولة لإعادة استخدام رمز تحديث مستهلك، فأُنهيت الجلسة المرتبطة احترازيًا. عدد الإشارات خلال آخر 24 ساعة: 1.",
       "detectedAt": "2026-09-28T09:41:00.000Z",
-      "affectedTenant": { "id": "saas_hilal", "displayName": "فرق الهلال الطبية", "isDeleted": false }
+      "affectedTenant": { "id": "saas_hilal", "displayName": "alwalla", "isDeleted": false }
     }
   ]
 }
@@ -267,7 +267,7 @@ then `id` desc. The cursor encodes the last row's `{at, id}`.
       "action": "feature_flag_changed",
       "category": "entitlement",
       "target": { "type": "tenant_feature", "id": "inventory", "displayName": "Inventory" },
-      "tenant": { "id": "saas_hilal", "displayName": "فرق الهلال الطبية", "isDeleted": false },
+      "tenant": { "id": "saas_hilal", "displayName": "alwalla", "isDeleted": false },
       "changes": [{ "field": "feature_enabled", "before": { "kind": "bool", "value": true }, "after": { "kind": "bool", "value": false } }]
     }
   ],
@@ -341,7 +341,7 @@ included; rows without a date never match).
   "byLifecycle": [{"key":"active","count":4},{"key":"suspended","count":1},{"key":"deletion_pending","count":1}],
   "byPlan":      [{"plan":{"id":"mtm_core","name":"ليدر الأساسية"},"count":2},{"plan":null,"count":1}]
 },
-"rows": {"items": [{"tenant":{"id":"saas_hilal","displayName":"فرق الهلال الطبية"},"lifecycle":"active","subscriptionStatus":"trial","plan":null,"relevantDate":"2026-10-05T00:00:00.000Z"}], "nextCursor": null}
+"rows": {"items": [{"tenant":{"id":"saas_hilal","displayName":"alwalla"},"lifecycle":"active","subscriptionStatus":"trial","plan":null,"relevantDate":"2026-10-05T00:00:00.000Z"}], "nextCursor": null}
 ```
 
 - `relevantDate`: trial → `trialEndsAt`; active → `renewsAt`; grace →
@@ -383,7 +383,7 @@ Extra params: `featureKey` (`inventory`, `statistics_reports`, `workshops`,
 
 ```json
 "summary": { "tenantCount": 6, "byFeature": [{"key":"workshops","states":[{"key":"enabled","count":5},{"key":"disabled","count":0},{"key":"unsupported","count":1}]}] },
-"rows": {"items": [{"tenant":{"id":"saas_hilal","displayName":"فرق الهلال الطبية"},"lifecycle":"active","features":[{"key":"inventory","state":"enabled"}]}]}
+"rows": {"items": [{"tenant":{"id":"saas_hilal","displayName":"alwalla"},"lifecycle":"active","features":[{"key":"inventory","state":"enabled"}]}]}
 ```
 
 - Reports the Feature Flag only (not capabilities, limits or module usage).
@@ -517,7 +517,7 @@ Params: `sort` = `lastActivity | members | storage` (default `lastActivity`),
 `limit` 1–100 (default 50). Non-deleted tenants.
 
 ```json
-{ "items": [{ "tenantId": "saas_hilal", "displayName": "فرق الهلال الطبية", "lifecycleStatus": "active", "subscriptionStatus": "active", "planId": "mtm_standard", "counts": { "detachments": 5, "members": 29, "workshops": 6, "admins": 2 }, "storageUsedBytes": 1048576, "lastActivityAt": "2026-09-28T09:55:00.000Z" }] }
+{ "items": [{ "tenantId": "saas_hilal", "displayName": "alwalla", "lifecycleStatus": "active", "subscriptionStatus": "active", "planId": "mtm_standard", "counts": { "detachments": 5, "members": 29, "workshops": 6, "admins": 2 }, "storageUsedBytes": 1048576, "lastActivityAt": "2026-09-28T09:55:00.000Z" }] }
 ```
 
 Counts follow `usageService` definitions (non-archived detachments, active
@@ -531,7 +531,7 @@ Params: `period` / `from` / `before` (for `signInsInRange`).
 
 ```json
 {
-  "tenant": { "id": "saas_hilal", "displayName": "فرق الهلال الطبية", "lifecycleStatus": "active", "subscriptionStatus": "active", "planId": "mtm_standard", "createdAt": "2026-01-10T08:00:00.000Z" },
+  "tenant": { "id": "saas_hilal", "displayName": "alwalla", "lifecycleStatus": "active", "subscriptionStatus": "active", "planId": "mtm_standard", "createdAt": "2026-01-10T08:00:00.000Z" },
   "range": { "from": "2026-08-29T10:00:00.000Z", "before": "2026-09-28T10:00:00.000Z" },
   "counts": { "detachmentGroups": 3, "detachments": 4, "members": 29, "workshops": 6, "admins": 2, "announcements": 7 },
   "activity": { "signInsInRange": 12, "lastActivityAt": "2026-09-28T09:55:00.000Z" },

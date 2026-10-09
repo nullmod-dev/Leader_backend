@@ -9,6 +9,7 @@ module.exports = {
   // identity
   Account: require('./accountModel'),
   Session: require('./sessionModel'),
+  Device: require('./deviceModel'),
   VerificationChallenge: require('./verificationChallengeModel'),
   PasswordReset: require('./passwordResetModel'),
   Authorization: require('./authorizationModel'),

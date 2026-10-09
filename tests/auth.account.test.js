@@ -1,5 +1,5 @@
 /**
- * The signed-in account: /me (+ avatar, password), /sessions, /new-device,
+ * The signed-in account: /me (+ avatar, password), /sessions,
  * and the MFA lifecycle.
  */
 const fs = require('fs');
@@ -11,7 +11,7 @@ const f = require('./helpers/factory');
 const base = '/api/v1/auth';
 const addr = (p = 'ac') => `${f.uniq(p)}@test.leader`;
 const signIn = (email, password = f.PASSWORD, device) => {
-  const req = f.api().post(`${base}/sign-in`);
+  const req = f.api().post(`${base}/sign-in`).set(f.device());
   if (device) req.set('X-Device-Name', device);
   return req.send({ email, password });
 };
@@ -192,27 +192,6 @@ describe('/auth/sessions', () => {
     await me(token).expect(200);
   });
 });
-
-describe('POST /auth/new-device/confirm', () => {
-  test('itsMe true marks the session; itsMe false ends every session', async () => {
-    const { account, token } = await signedInAdmin();
-    await f.api().post(`${base}/new-device/confirm`).set(f.auth(token)).send({ itsMe: true }).expect(204);
-    const sessions = await f.models.Session.find({ accountId: String(account._id), revokedAt: { $exists: false } });
-    expect(sessions.some((s) => s.newDeviceConfirmed)).toBe(true);
-
-    const other = await signIn(account.email).expect(200);
-    await f.api().post(`${base}/new-device/confirm`).set(f.auth(other.body.accessToken)).send({ itsMe: false }).expect(204);
-    await me(token).expect(401);
-    await me(other.body.accessToken).expect(401);
-  });
-
-  test('missing itsMe → 422 validation', async () => {
-    const { token } = await signedInAdmin();
-    const res = await f.api().post(`${base}/new-device/confirm`).set(f.auth(token)).send({}).expect(422);
-    expect(res.body.error.fields.itsMe).toBeDefined();
-  });
-});
-
 describe('(d) MFA', () => {
   test('setup → verify enables; a new sign-in is mfaRequired until /mfa/verify with a TOTP', async () => {
     const { account, token } = await signedInAdmin();

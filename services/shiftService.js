@@ -392,7 +392,9 @@ const saveOrStale = async (doc, serialize, options = {}) => {
     return await saveVersioned(doc, serialize, options);
   } catch (err) {
     if (!(err instanceof mongoose.Error.VersionError)) throw err;
-    const current = await doc.constructor.findById(doc._id);
+    // Re-read inside the document's own tenant (the data-layer guard
+    // refuses a tenant-plane query without one).
+    const current = await doc.constructor.findOne({ _id: doc._id, ...(doc.tenantId ? { tenantId: doc.tenantId } : {}) });
     throw staleWrite(current, serialize);
   }
 };

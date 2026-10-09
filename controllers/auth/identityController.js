@@ -20,6 +20,7 @@ const securityService = require('../../services/securityService');
 const otpService = require('../../services/otpService');
 const googleService = require('../../services/googleService');
 const onboarding = require('../../services/onboardingService');
+const deviceService = require('../../services/deviceService');
 
 const INVALID_CREDENTIALS = () => new AppError('invalid_credentials', 401, 'The email or password is not correct.');
 
@@ -117,6 +118,13 @@ exports.signIn = catchAsync(async (req, res) => {
     throw INVALID_CREDENTIALS();
   }
 
+  // A blocked device learns nothing more than that it is blocked.
+  await deviceService.assertNotBlocked(account, req);
+  if (account.passwordResetRequired) {
+    // A trusted device answered "No" to a new device: the password is known to
+    // someone else, so it no longer signs in until it is reset.
+    throw new AppError('password_reset_required', 403, 'Reset your password before you sign in with it.');
+  }
   if (!account.emailVerified) {
     res.status(200).json(await onboarding.verificationRequired(account));
     return;
@@ -147,8 +155,9 @@ exports.signIn = catchAsync(async (req, res) => {
  *
  * A RETURNING account is one whose mailbox this app has already proved — it
  * has a past connection with the app — and it proves the mailbox again with a
- * code before the session opens. A first Google sign-in does not: Google has
- * just proved the address.
+ * code before the session opens, unless it signs in on one of its trusted
+ * devices with the Google identity it already holds. A first Google sign-in
+ * on a brand-new account proves the mailbox with the first-device code.
  */
 const resolveGoogleAccount = async (identity) => {
   let account = await Account.findOne({ googleSub: identity.sub }).select('+passwordHash');
@@ -207,6 +216,13 @@ exports.google = catchAsync(async (req, res) => {
     resolved = await resolveGoogleAccount(identity);
   }
   const { account, returning } = resolved;
+  // A returning account skips the code only on a device it already trusts,
+  // and only with the Google identity it already holds (linking a new one
+  // always needs the code). A blocked device is refused here.
+  if (returning && account.googleSub === identity.sub && (await deviceService.isTrusted(account, req))) {
+    res.status(200).json(await onboarding.continueAfterAuthentication(account, req));
+    return;
+  }
   if (returning) {
     // The code goes to the account's own address. A Google identity is linked
     // (when that code is right) only to an account that holds none yet; an

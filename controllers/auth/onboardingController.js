@@ -118,6 +118,7 @@ exports.completeActor = (req) => (req.onboardingSubject ? `acc:${req.onboardingS
 exports.complete = catchAsync(async (req, res) => {
   const accountId = String(req.auth.account._id);
   const currentSessionId = String(req.auth.session._id);
+  const { deviceRef } = req.auth.session;
 
   const account = await withTransaction(async (session) => {
     const fresh = await Account.findById(accountId).session(session || null);
@@ -133,5 +134,5 @@ exports.complete = catchAsync(async (req, res) => {
     return fresh;
   });
 
-  res.status(200).json({ outcome: 'ready', ...tokenService.pair(await tokenService.createSession(account, 'full', req)) });
+  res.status(200).json({ outcome: 'ready', ...tokenService.pair(await tokenService.createSession(account, 'full', req, { deviceRef })) });
 });

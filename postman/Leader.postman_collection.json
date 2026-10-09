@@ -468,7 +468,7 @@
           "response": []
         },
         {
-          "name": "New device — it was me",
+          "name": "My devices",
           "event": [
             {
               "listen": "test",
@@ -477,25 +477,22 @@
                 "exec": [
                   "let json = null;",
                   "try { json = pm.response.json(); } catch (e) { json = null; }",
-                  "pm.test('status is 204', function () { pm.expect([204]).to.include(pm.response.code, 'body: ' + pm.response.text().slice(0, 400)); });"
+                  "pm.test('status is 200', function () { pm.expect([200]).to.include(pm.response.code, 'body: ' + pm.response.text().slice(0, 400)); });",
+                  "pm.test(\"check 1: pm.expect(json).to.have.keys(\\\"limit\\\",\\\"devices\\\")\", function () { pm.expect(json).to.have.keys(\"limit\",\"devices\") });"
                 ]
               }
             }
           ],
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
                 "key": "Authorization",
                 "value": "Bearer {{mainAdminToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/new-device/confirm",
+              "raw": "{{baseUrl}}/api/v1/auth/devices",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -503,18 +500,8 @@
                 "api",
                 "v1",
                 "auth",
-                "new-device",
-                "confirm"
+                "devices"
               ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"itsMe\": true\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           },
           "response": []
@@ -2391,7 +2378,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/platform/tenants?search=الهلال",
+              "raw": "{{baseUrl}}/api/v1/platform/tenants?search=alwalla",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2404,7 +2391,7 @@
               "query": [
                 {
                   "key": "search",
-                  "value": "الهلال"
+                  "value": "alwalla"
                 }
               ]
             }
@@ -2610,7 +2597,7 @@
                   "try { json = pm.response.json(); } catch (e) { json = null; }",
                   "pm.test('status is 200', function () { pm.expect([200]).to.include(pm.response.code, 'body: ' + pm.response.text().slice(0, 400)); });",
                   "pm.test(\"check 1: pm.expect(json.id).to.eql(\\\"saas_hilal\\\")\", function () { pm.expect(json.id).to.eql(\"saas_hilal\") });",
-                  "pm.test(\"check 2: pm.expect(json.teamCode).to.eql(\\\"MTM-4K7P-QX92\\\")\", function () { pm.expect(json.teamCode).to.eql(\"MTM-4K7P-QX92\") });",
+                  "pm.test(\"check 2: pm.expect(json.teamCode).to.eql(\\\"MTM-8J9M-4A4E\\\")\", function () { pm.expect(json.teamCode).to.eql(\"MTM-8J9M-4A4E\") });",
                   "pm.test(\"check 3: pm.expect(json.lifecycle.status).to.eql(\\\"active\\\")\", function () { pm.expect(json.lifecycle.status).to.eql(\"active\") });",
                   "pm.test(\"check 4: pm.expect(json.counts.detachments).to.be.above(0)\", function () { pm.expect(json.counts.detachments).to.be.above(0) });"
                 ]
@@ -5515,7 +5502,7 @@
                   "try { json = pm.response.json(); } catch (e) { json = null; }",
                   "pm.test('status is 200', function () { pm.expect([200]).to.include(pm.response.code, 'body: ' + pm.response.text().slice(0, 400)); });",
                   "pm.test(\"check 1: pm.expect(json.items[0].role).to.eql(\\\"main_admin\\\")\", function () { pm.expect(json.items[0].role).to.eql(\"main_admin\") });",
-                  "pm.test(\"check 2: pm.expect(json.items[0].tenantName).to.eql(\\\"فرق الهلال الطبية\\\")\", function () { pm.expect(json.items[0].tenantName).to.eql(\"فرق الهلال الطبية\") });"
+                  "pm.test(\"check 2: pm.expect(json.items[0].tenantName).to.eql(\\\"alwalla\\\")\", function () { pm.expect(json.items[0].tenantName).to.eql(\"alwalla\") });"
                 ]
               }
             }

@@ -12,7 +12,7 @@ const securitySignalSchema = new mongoose.Schema(
   {
     kind: {
       type: String,
-      enum: ['sign_in_failed', 'team_link_failed', 'refresh_replay', 'mfa_failed', 'verification_failed', 'reset_failed'],
+      enum: ['sign_in_failed', 'team_link_failed', 'refresh_replay', 'mfa_failed', 'verification_failed', 'reset_failed', 'new_device_denied'],
       required: true,
     },
     accountId: String,

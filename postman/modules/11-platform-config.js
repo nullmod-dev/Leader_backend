@@ -204,7 +204,7 @@ module.exports = {
       auth: 'platform',
       query: { search: 'pbea4007' },
       expect: 200,
-      tests: ['pm.expect(json.items[0].role).to.eql("main_admin")', 'pm.expect(json.items[0].tenantName).to.eql("فرق الهلال الطبية")'],
+      tests: ['pm.expect(json.items[0].role).to.eql("main_admin")', 'pm.expect(json.items[0].tenantName).to.eql("alwalla")'],
     },
     {
       name: 'Accounts of saas_hilal',

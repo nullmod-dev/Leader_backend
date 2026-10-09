@@ -253,7 +253,7 @@ offline copy is matched to the session the phone still holds:
     "id": "u_demo_main", "name": "سلمى الحارثي", "email": "pbea4007@mtu.edu.iq",
     "role": "main_admin", "saasTenantId": "saas_hilal",
     "capabilities": { "global": ["detachment.create", "…30 keys"], "scoped": {} },
-    "orgName": "فرق الهلال الطبية", "avatarInitials": "سا", "avatarUrl": "http://…/images/avatars/…webp"
+    "orgName": "alwalla", "avatarInitials": "سا", "avatarUrl": "http://…/images/avatars/…webp"
   },
   "access": { "accountStatus": "active", "tenantStatus": "active", "demoMode": "none", "mfaRequired": false }
 }
@@ -280,7 +280,7 @@ offline copy is matched to the session the phone still holds:
 Other account endpoints: `POST /auth/sign-out` (204), `GET /auth/sessions`,
 `DELETE /auth/sessions/:id`, `DELETE /auth/sessions` (all others),
 `PATCH /auth/me`, `POST|DELETE /auth/me/avatar`, `POST /auth/me/password`,
-`POST /auth/mfa/setup|verify|disable`, `POST /auth/new-device/confirm`,
+`POST /auth/mfa/setup|verify|disable`, `GET /auth/devices`, `POST /auth/devices/:id/approve|deny`, `DELETE /auth/devices/:id`,
 password reset `POST /auth/password-reset/request|verify|complete`
 (verify/complete use `Authorization: Bearer <resetToken>`). Full detail:
 [`api/auth.md`](./api/auth.md).
@@ -312,7 +312,7 @@ The three `outcome` shapes (sign-in, Google, verify, complete):
 { "outcome": "onboarding", "onboardingToken": "…", "onboardingRefreshToken": "…",
   "snapshot": { "accountId": "u_…", "email": "…", "methods": ["password"], "accountStatus": "pending_setup",
                 "linkStatus": "linked", "setupStatus": "required",
-                "tenant": { "displayName": "فرق الهلال الطبية", "role": "admin", "tenantStatus": "active" },
+                "tenant": { "displayName": "alwalla", "role": "admin", "tenantStatus": "active" },
                 "displayNameSuggestion": "نورة العتيبي", "authorizationExpiresAt": "…Z" } }
 ```
 
@@ -510,7 +510,7 @@ client's own `syncConflict`/`syncFailed` ids can be stored with
 
 ### Organization & plan (`GET /tenant/organization`)
 ```json
-{ "organization": {"tenantId": "saas_hilal", "displayName": "فرق الهلال الطبية", "lifecycleStatus": "active", "createdAt": "…Z"},
+{ "organization": {"tenantId": "saas_hilal", "displayName": "alwalla", "lifecycleStatus": "active", "createdAt": "…Z"},
   "mainAdmin": {"displayName": "سلمى الحارثي"},
   "subscription": {"status": "active", "planId": "mtm_advanced", "renewsAt": "…Z"},
   "limits": {"usageIncluded": true, "items": [{"key": "detachments", "planDefault": 40, "effective": 40, "overridden": false, "usage": 4}]},
@@ -557,7 +557,7 @@ Base path `/api/v1` omitted below. Detail per module in `docs/api/`.
 | profile (/more/profile) | `PATCH /auth/me` · `POST/DELETE /auth/me/avatar` · `POST /auth/me/password` |
 | `listSessions` / `revokeSession` (/more/sessions) | `GET /auth/sessions` · `DELETE /auth/sessions/:id` · `DELETE /auth/sessions` |
 | `beginMfaSetup` / `verifyMfa` (/mfa-setup, /mfa-challenge) | `POST /auth/mfa/setup` · `/verify` · `/disable` |
-| `confirmNewDevice` (/new-device) | `POST /auth/new-device/confirm` |
+| `approveDevice` / `denyDevice` (/new-device) | `POST /auth/devices/:id/approve` · `POST /auth/devices/:id/deny` |
 | `requestPasswordReset` / `verifyResetOtp` / `setNewPassword` (/forgot → /otp → /new-password) | `POST /auth/password-reset/request` · `/verify` · `/complete` |
 | `AppVersionRepository.checkSupport` | `GET /app-version/check?version=` |
 
@@ -1114,7 +1114,7 @@ String formatInstant(DateTime d) => d.toUtc().toIso8601String();
 
 | Provider (today → mock) | Real implementation calls |
 |---|---|
-| `authRepositoryProvider` | `/auth/me`, `/auth/sessions`, `/auth/mfa/*`, `/auth/password-reset/*`, `/auth/sign-out`, `/auth/new-device/confirm` |
+| `authRepositoryProvider` | `/auth/me`, `/auth/sessions`, `/auth/mfa/*`, `/auth/password-reset/*`, `/auth/sign-out`, `/auth/devices` |
 | `onboardingRepositoryProvider` | `/auth/sign-up`, `/auth/sign-in`, `/auth/google`, `/auth/verification/*`, `/auth/onboarding/*` |
 | `appVersionRepositoryProvider` | `GET /app-version/check?version=` (+ any `426`) |
 | `detachmentGroupRepositoryProvider` / `detachmentRepositoryProvider` | `/detachment-groups/**`, `/detachments/**` |

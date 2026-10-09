@@ -1,6 +1,6 @@
 /**
- * Session lifecycle: sign-out, refresh rotation, the account's device list
- * (/more/security) and the new-device confirmation.
+ * Session lifecycle: sign-out, refresh rotation and the account's session list
+ * (/more/security). Device trust lives in devicesController.
  */
 const catchAsync = require('../../utils/catchAsyncErrors');
 const AppError = require('../../utils/appError');
@@ -61,17 +61,4 @@ exports.revokeOthers = catchAsync(async (req, res) => {
   const { account, session } = req.auth;
   const revoked = await tokenService.revokeAllForAccount(account._id, 'revoked_by_user', { exceptSessionId: session._id });
   res.status(200).json({ revoked });
-});
-
-// POST /auth/new-device/confirm {itsMe} → 204
-exports.confirmNewDevice = catchAsync(async (req, res) => {
-  const { account, session } = req.auth;
-  if (req.body.itsMe) {
-    session.newDeviceConfirmed = true;
-    await session.save();
-  } else {
-    // "Not me": end every session of the account, this one included.
-    await tokenService.revokeAllForAccount(account._id, 'new_device_denied');
-  }
-  res.status(204).end();
 });

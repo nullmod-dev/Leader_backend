@@ -91,14 +91,18 @@ const daily = (Model, match, field, range, sumExpr = 0) =>
         total: { $sum: sumExpr },
       },
     },
-  ]);
+  ]).crossTenant('platform analytics');
 
 const first = (rows, field = 'n') => (rows && rows[0] ? rows[0][field] : 0);
 const countOf = (rows, key) => (rows.find((r) => r._id === key) || {}).count || 0;
 
 /** { tenantId → count } for `match`, grouped by `groupField`. */
 const groupCount = async (Model, match, groupField) => {
-  const rows = await Model.aggregate([{ $match: match }, { $group: { _id: `$${groupField}`, count: { $sum: 1 } } }]);
+  // Platform analytics count across every team by design — said explicitly
+  // for the data-layer guard (models/plugins/tenantScope).
+  const rows = await Model.aggregate([{ $match: match }, { $group: { _id: `$${groupField}`, count: { $sum: 1 } } }]).crossTenant(
+    'platform analytics',
+  );
   return new Map(rows.map((r) => [r._id, r.count]));
 };
 

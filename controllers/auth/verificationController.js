@@ -83,7 +83,9 @@ exports.verify = catchAsync(async (req, res) => {
   }
   await otpService.endActiveChallenges(account._id);
 
-  res.status(200).json(await onboarding.continueAfterAuthentication(account, req));
+  // Any correct code proves the mailbox from this device: a device the
+  // account does not trust yet is admitted now (services/deviceService).
+  res.status(200).json(await onboarding.continueAfterAuthentication(account, req, { codeVerified: true }));
 });
 
 // POST /auth/verification/resend → 200 Challenge (same challengeId)

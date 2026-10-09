@@ -120,6 +120,7 @@ exports.complete = catchAsync(async (req, res) => {
   await account.setPassword(password);
   // Receiving the code proved ownership of the address.
   account.emailVerified = true;
+  account.passwordResetRequired = false;
   await account.save();
   await otpService.endActiveChallenges(account._id);
   await tokenService.revokeAllForAccount(account._id, 'password_reset');

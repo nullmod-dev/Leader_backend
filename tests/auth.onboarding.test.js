@@ -13,7 +13,7 @@ const PW = 'Str0ng-passw0rd';
 
 const addr = (p = 'ob') => `${f.uniq(p)}@test.leader`;
 const signUp = (email, password = PW) => f.api().post(`${base}/sign-up`).set(f.idem()).send({ email, password });
-const verify = (challengeId, code = CODE) => f.api().post(`${base}/verification/verify`).set(f.idem()).send({ challengeId, code });
+const verify = (challengeId, code = CODE) => f.api().post(`${base}/verification/verify`).set(f.device()).set(f.idem()).send({ challengeId, code });
 const snapshot = (token) => f.api().get(`${base}/onboarding`).set(f.auth(token));
 const link = (token, teamCode) => f.api().post(`${base}/onboarding/link`).set(f.auth(token)).set(f.idem()).send({ teamCode });
 const complete = (token, displayName, headers = f.idem()) =>

@@ -61,12 +61,12 @@ module.exports = {
       ],
     },
     {
-      name: 'New device — it was me',
-      method: 'POST',
-      path: '/auth/new-device/confirm',
+      name: 'My devices',
+      method: 'GET',
+      path: '/auth/devices',
       auth: 'main',
-      body: { itsMe: true },
-      expect: 204,
+      expect: 200,
+      tests: ['pm.expect(json).to.have.keys("limit","devices")'],
     },
 
     // ---- refresh rotation on a SEPARATE session -----------------------------------------

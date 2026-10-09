@@ -25,7 +25,10 @@
  *   POST   /mfa/setup                 full session + active account → MfaSetupData
  *   POST   /mfa/verify                full session + active account → 204
  *   POST   /mfa/disable               accountGuard → 204
- *   POST   /new-device/confirm        full session → 204
+ *   GET    /devices                   accountGuard → { limit, devices: [Device] }
+ *   POST   /devices/:deviceId/approve accountGuard, trusted device → 204
+ *   POST   /devices/:deviceId/deny    accountGuard, trusted device → { passwordReset }
+ *   DELETE /devices/:deviceId         accountGuard → 204
  *   POST   /password-reset/request    public → { resetToken }
  *   POST   /password-reset/verify     reset bearer → 204
  *   POST   /password-reset/complete   reset bearer → 204
@@ -44,6 +47,7 @@ const emailEntry = require('../controllers/auth/emailEntryController');
 const verification = require('../controllers/auth/verificationController');
 const onboarding = require('../controllers/auth/onboardingController');
 const sessions = require('../controllers/auth/sessionController');
+const devices = require('../controllers/auth/devicesController');
 const me = require('../controllers/auth/meController');
 const mfa = require('../controllers/auth/mfaController');
 const reset = require('../controllers/auth/passwordResetController');
@@ -77,7 +81,12 @@ router.post('/refresh', sessions.refresh);
 router.get('/sessions', ...accountGuard, sessions.list);
 router.delete('/sessions', ...accountGuard, sessions.revokeOthers);
 router.delete('/sessions/:sessionId', ...accountGuard, sessions.revokeOne);
-router.post('/new-device/confirm', protect, validate(v.newDevice), sessions.confirmNewDevice);
+
+// ---- devices (device trust) ------------------------------------------------------------
+router.get('/devices', ...accountGuard, devices.list);
+router.post('/devices/:deviceId/approve', ...accountGuard, devices.approve);
+router.post('/devices/:deviceId/deny', ...accountGuard, devices.deny);
+router.delete('/devices/:deviceId', ...accountGuard, devices.remove);
 
 // ---- the signed-in account ----------------------------------------------------------------
 router.get('/me', protect, me.get);

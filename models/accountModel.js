@@ -73,6 +73,9 @@ const accountSchema = new mongoose.Schema(
     demoSessionId: String,
 
     lastLoginAt: Date,
+    // Set when a trusted device answered "No" to a new device: a password
+    // sign-in is refused until the password is reset.
+    passwordResetRequired: { type: Boolean, default: false },
     passwordChangedAt: Date,
   },
   { timestamps: true, collection: 'accounts' },

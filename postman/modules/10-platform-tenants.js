@@ -40,7 +40,7 @@ module.exports = {
       method: 'GET',
       path: T,
       auth: 'platform',
-      query: { search: 'الهلال' },
+      query: { search: 'alwalla' },
       expect: 200,
       tests: ['pm.expect(json.items.map(t => t.id)).to.include("saas_hilal")'],
     },
@@ -89,7 +89,7 @@ module.exports = {
       expect: 200,
       tests: [
         'pm.expect(json.id).to.eql("saas_hilal")',
-        'pm.expect(json.teamCode).to.eql("MTM-4K7P-QX92")',
+        'pm.expect(json.teamCode).to.eql("MTM-8J9M-4A4E")',
         'pm.expect(json.lifecycle.status).to.eql("active")',
         'pm.expect(json.counts.detachments).to.be.above(0)',
       ],

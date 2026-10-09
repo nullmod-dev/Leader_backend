@@ -160,6 +160,7 @@ const securityAlerts = async (now = new Date()) => {
         ],
         signInTotal: [{ $match: { kind: 'sign_in_failed' } }, groupStage(null)],
         replay: [{ $match: { kind: 'refresh_replay' } }, groupStage('$accountId')],
+        deviceDenied: [{ $match: { kind: 'new_device_denied' } }, groupStage('$accountId')],
         teamLink: [
           { $match: { kind: 'team_link_failed', accountId: { $type: 'string' } } },
           groupStage('$accountId'),
@@ -182,6 +183,16 @@ const securityAlerts = async (now = new Date()) => {
         severity: 'critical',
         title: 'إعادة استخدام رمز جلسة سابق',
         description: `رُصدت محاولة لإعادة استخدام رمز تحديث مستهلك، فأُنهيت الجلسة المرتبطة احترازيًا. عدد الإشارات خلال آخر 24 ساعة: ${g.count}.`,
+      }),
+    ),
+  );
+  facets.deviceDenied.forEach((g) =>
+    tasks.push(
+      alert(g, {
+        id: `security_device_denied_${short(g._id || 'unknown')}`,
+        severity: 'critical',
+        title: 'رفض مدير جهازاً جديداً على حسابه',
+        description: `أكّد صاحب حساب إداري أن جهازاً جديداً سجّل الدخول إلى حسابه ليس جهازه، فحُظر الجهاز وأُنهيت كل جلسات الحساب وطُلبت إعادة تعيين كلمة المرور. عدد الحالات خلال آخر 24 ساعة: ${g.count}.`,
       }),
     ),
   );

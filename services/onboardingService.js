@@ -18,6 +18,7 @@ const AppError = require('../utils/appError');
 const tokenService = require('./tokenService');
 const authorizationService = require('./authorizationService');
 const otpService = require('./otpService');
+const deviceService = require('./deviceService');
 const { serializeAuthUser, serializeSessionAccess } = require('./sessionView');
 
 const PASSWORD_MIN = 8;
@@ -106,20 +107,29 @@ const verificationRequired = async (account, { purpose = 'email', googleSub } = 
 };
 
 /**
- * A verified identity proved itself: auto-link a Simple Admin invitation,
- * then issue a FULL session (finished administrators — including suspended
- * or revoked ones, which the client routes on SessionAccess.accountStatus)
- * or an ONBOARDING session with the snapshot.
+ * A verified identity proved itself: admit the device (services/deviceService
+ * — a device the account does not trust answers `verification_required`
+ * with purpose `new_device` until its email code is verified), auto-link a
+ * Simple Admin invitation, then issue a FULL session (finished administrators
+ * — including suspended or revoked ones, which the client routes on
+ * SessionAccess.accountStatus) or an ONBOARDING session with the snapshot.
+ *
+ * @param {object} [opts]
+ * @param {boolean} [opts.codeVerified]  an email code was verified just now
  */
-const continueAfterAuthentication = async (account, req) => {
+const continueAfterAuthentication = async (account, req, { codeVerified = false } = {}) => {
+  const admission = await deviceService.admit(account, req, { codeVerified });
+  if (admission.needsCode) return verificationRequired(account, { purpose: 'new_device' });
+  const deviceRef = admission.device ? String(admission.device._id) : undefined;
+
   await authorizationService.refreshLinkState(account);
   account.lastLoginAt = new Date();
   await account.save();
 
   if (account.setupCompleted || account.role === 'super_admin') {
-    return { outcome: 'ready', ...tokenService.pair(await tokenService.createSession(account, 'full', req)) };
+    return { outcome: 'ready', ...tokenService.pair(await tokenService.createSession(account, 'full', req, { deviceRef })) };
   }
-  const { session, accessToken, refreshToken } = await tokenService.createSession(account, 'onboarding', req);
+  const { session, accessToken, refreshToken } = await tokenService.createSession(account, 'onboarding', req, { deviceRef });
   return {
     outcome: 'onboarding',
     sessionId: String(session._id),
@@ -144,7 +154,7 @@ const meView = async (account, session) => {
   return {
     ...(session ? { sessionId: String(session._id) } : {}),
     user: serializeAuthUser(account, tenant),
-    access: serializeSessionAccess(account, tenant, session, demo),
+    access: { ...serializeSessionAccess(account, tenant, session, demo), ...(await deviceService.accessFacts(account, session)) },
   };
 };
 

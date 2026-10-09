@@ -20,11 +20,12 @@ The client branches on `code` only.
 2. [State machine & flows](#state-machine--flows)
 3. [Identity proof](#identity-proof) — sign-up, sign-in, Google, verify, resend
 4. [Onboarding](#onboarding) — snapshot, link, complete
-5. [Sessions](#sessions) — sign-out, refresh, list/revoke, new-device
-6. [The signed-in account](#the-signed-in-account) — me, avatar, password
-7. [MFA](#mfa)
-8. [Password reset](#password-reset)
-9. [Security notes](#security-notes)
+5. [Sessions](#sessions) — sign-out, refresh, list/revoke, lifetime
+6. [Device trust](#device-trust) — X-Device-Id, new-device code, restriction, My devices
+7. [The signed-in account](#the-signed-in-account) — me, avatar, password
+8. [MFA](#mfa)
+9. [Password reset](#password-reset)
+10. [Security notes](#security-notes)
 
 ---
 
@@ -42,6 +43,10 @@ The client branches on `code` only.
   "attemptsRemaining": 5
 }
 ```
+
+A sign-in or new-device challenge adds `"purpose": "sign_in"` or
+`"purpose": "new_device"` (see [Device trust](#device-trust)); an
+email-ownership challenge has no `purpose`.
 
 Policy (`AppSettings.otp`, editable by a Super Admin): `length` 6, `ttlMinutes` 10,
 `maxAttempts` 5, `resendCooldownSeconds` 60. Outside production
@@ -121,7 +126,7 @@ Never contains a tenant id, a Team Code, counts or capabilities.
     "role": "main_admin",
     "saasTenantId": "saas_hilal",
     "capabilities": { "global": ["detachment.create", "…"], "scoped": {} },
-    "orgName": "فرق الهلال الطبية",
+    "orgName": "alwalla",
     "avatarInitials": "سا",
     "avatarUrl": "http://localhost:4000/images/avatars/account-u_demo_main-01j9….webp"
   },
@@ -137,6 +142,15 @@ Never contains a tenant id, a Team Code, counts or capabilities.
 Built by `services/sessionView` (`serializeAuthUser`, `serializeSessionAccess`).
 `super_admin` / `customer_demo` → `saasTenantId: null` and an empty grant.
 `customer_demo` adds `access.sessionExpiresAt` and `demoMode: active|expired`.
+
+Device trust adds, only when they apply:
+
+- `access.deviceRestriction: { "reason": "new_device", "until": "<ISO>" }` —
+  this session's device is in its restricted window; or
+  `{ "reason": "device_limit" }` (no `until`) — an untrusted device past the
+  trusted-device limit, restricted until a trusted device approves it.
+- `access.pendingDeviceApprovals: [{ "id": "dv_…", "label": "Android", "signedInAt": "<ISO>" }]`
+  — on a trusted, unrestricted device: new devices waiting for its Yes/No.
 
 ### Session (device list)
 
@@ -295,13 +309,21 @@ Order of evaluation:
 2. Unknown address, account without a password method, `customer_demo`
    account, or wrong password → **one** answer: 401 `invalid_credentials`
    (a dummy bcrypt comparison keeps timing alike) + a `sign_in_failed` signal.
-3. Address not verified → its other challenges end, a new code is mailed →
+3. The request's device is blocked for this account → 403 `device_blocked`.
+   A trusted device answered "No" → 403 `password_reset_required` until the
+   password is reset.
+4. Address not verified → its other challenges end, a new code is mailed →
    `verification_required`.
-4. Otherwise: Simple Admin invitations auto-link, `lastLoginAt` is set, then
+5. A device the account does not trust → `verification_required` with
+   `purpose: "new_device"` (see [Device trust](#device-trust)).
+6. Otherwise: Simple Admin invitations auto-link, `lastLoginAt` is set, then
    `ready` (finished or `super_admin`) or `onboarding` (+ snapshot).
 
 | Code | HTTP | When |
 |---|---|---|
+| `device_id_required` | 400 | no valid `X-Device-Id` (every sign-in, Google and verify sends it) |
+| `device_blocked` | 403 | see rule 3 |
+| `password_reset_required` | 403 | see rule 3 |
 | `invalid_credentials` | 401 | see rule 2 |
 | `rate_limited` | 429 | lockout budget spent (`retryAfterSeconds`, `retryAvailableAt`, `Retry-After`) |
 | `validation` | 422 | missing email/password |
@@ -499,6 +521,12 @@ suspended account's full session and any revoked account's session end on
 refresh. **Every** failure (missing, unknown, expired, revoked, replayed) is
 one answer: **401 `authentication_expired`**.
 
+**Lifetime.** `refreshExpiresAt` is the idle deadline: each refresh (and each
+`GET /auth/me`, at most about once an hour) slides it to now +
+`REFRESH_TOKEN_TTL_DAYS` (7), never past `absoluteExpiresAt` = sign-in +
+`SESSION_MAX_DAYS` (30). A session older than the absolute limit, or idle
+past its deadline, answers 401 `authentication_expired`.
+
 ### GET `/auth/sessions`
 
 `accountGuard` (full session + MFA satisfied). Screen: `/more/security`.
@@ -518,17 +546,92 @@ not expired), newest first, the calling one `current: true`.
 
 `accountGuard` → **200** `{ "revoked": 2 }` — every OTHER session of the account ends.
 
-### POST `/auth/new-device/confirm`
+---
 
-Full session (no MFA gate). Screen: new-device prompt.
+## Device trust
+
+Every sign-in (`/sign-in`, `/google`, `/verification/verify`) sends
+`X-Device-Id`: a UUID v4 the app minted on its first launch and keeps in
+secure storage (no hardware id). The server stores only its hash, per
+account; a reinstall is a new device. Without it → 400 `device_id_required`.
+
+| Device | Sign-in |
+|---|---|
+| trusted | no code; Google skips its sign-in code only here, and only with the Google identity the account already holds |
+| none yet on this account (first device) | email code (`new_device`; a sign-up's own code counts), then **trusted, not restricted** |
+| new, a trusted slot is free | email code, then trusted and **restricted** for `NEW_DEVICE_RESTRICT_HOURS` (6) unless a trusted device answers Yes |
+| new, `TRUSTED_DEVICES_MAX` (3) already trusted | email code every time; **untrusted and restricted** until a trusted device approves it after a slot is freed |
+| blocked | 403 `device_blocked` |
+
+A new device on an account that already had one is announced: the account's
+email gets `newDeviceSignedIn`, and its trusted devices see it in
+`access.pendingDeviceApprovals`. A session opened before device trust shipped
+registers its phone (trusted while a slot is free, no code) on its first
+request carrying `X-Device-Id`.
+
+**Restricted session** (`middlewares/restrictedSession.js`), refused with
+**403 `session_restricted`** `{ reason, restrictedUntil? }`:
+
+- always: `POST /me/password`, `POST /mfa/setup|disable`, `DELETE /sessions[/:id]`,
+  device approve/deny/remove, every `/tenant/simple-admin*` write,
+  `/settings/organization` writes, `/billing/*` writes,
+  `GET /workshops/:id/export.csv`, every `/platform/*` write;
+- edits, deletes and record actions on any tenant record this device did not
+  create (`_createdByDevice`), except attendance check-in/out/absent,
+  inventory movements, shift-assignment adds and adding people to a workshop.
+
+Creating records, reading, and editing what the device created stay open.
+`POST /sync/push` replays each operation through the API, so a refused
+operation comes back with `httpStatus: 403`, `code: "session_restricted"`.
+
+### GET `/auth/devices`
+
+`accountGuard`. Screen: `/more/security/devices`.
+**200** `{ "limit": 3, "devices": [Device] }` — trusted then untrusted; blocked
+devices are not listed.
 
 ```json
-{ "itsMe": true }
+{
+  "id": "dv_…",
+  "label": "Android",
+  "status": "trusted",
+  "current": false,
+  "restricted": true,
+  "restrictedUntil": "2026-10-08T22:00:00.000Z",
+  "signedInAt": "2026-10-08T16:00:00.000Z",
+  "lastSeenAt": "2026-10-08T16:05:00.000Z"
+}
 ```
 
-`true` → this session is marked `newDeviceConfirmed`. `false` → **every**
-session of the account (this one included) is revoked. **204**.
-`validation` 422 when `itsMe` is missing.
+### POST `/auth/devices/:deviceId/approve`
+
+`accountGuard`, from a trusted, unrestricted device ("Yes, this is my
+device") → **204**. The device's restriction lifts at once (an untrusted one
+becomes trusted).
+
+| Code | HTTP | When |
+|---|---|---|
+| `not_permitted` | 403 | the caller's device is not trusted (or unknown) |
+| `session_restricted` | 403 | the caller is restricted itself |
+| `trusted_device_limit` | 409 | approving an untrusted device while the limit is full (`limit`) |
+| `not_found` | 404 | unknown, blocked, or another account's device |
+
+### POST `/auth/devices/:deviceId/deny`
+
+`accountGuard`, from a trusted, unrestricted device ("No, this is not me") →
+**200** `{ "passwordReset": true|false }`. The device is blocked, **every**
+session of the account ends (the answering one too), and an account with a
+password must reset it (`password_reset_required` on password sign-in until
+then; Google-only accounts skip the reset). A Simple Admin's No emails the
+team's Main Admin; a Main Admin's (or Super Admin's) No emails the Super
+Admins and raises a `security_device_denied_*` alert on
+`/platform/security-alerts`. Refusals as for approve.
+
+### DELETE `/auth/devices/:deviceId`
+
+`accountGuard` → **204**. The device's sessions end; it is a new device next
+time. 422 `validation` for the device in use (sign out instead); 404 for a
+blocked or unknown device. Refused while restricted.
 
 ---
 
@@ -692,10 +795,11 @@ the account is revoked — the user signs in again.
 - Throttles (`SecuritySignal`, sliding windows): `sign_in_failed` per address
   (settings `signInLockout`), `team_link_failed` per account (10/60 min),
   `mfa_failed` per account (10/15 min). `verification_failed`, `reset_failed`
-  and `refresh_replay` are recorded for `/platform/security-alerts`.
+  `refresh_replay` and `new_device_denied` are recorded for
+  `/platform/security-alerts`.
   Per-IP `authLimiter` (60/15 min) fronts sign-up, sign-in and reset request.
 - Stored secrets: password bcrypt (cost 12), OTP / backup codes / refresh
-  tokens as sha256; the TOTP secret is stored as-is (`select: false`).
+  tokens / device ids as sha256; the TOTP secret is stored as-is (`select: false`).
 - Idempotency records of `verify`, `google` and `complete` hold the issued
   tokens so a lost response can be replayed; they expire after
   `idempotencyRetentionDays`.

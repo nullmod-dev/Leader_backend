@@ -20,7 +20,9 @@ const catchAsync = require('../utils/catchAsyncErrors');
 const tokenService = require('../services/tokenService');
 const usageService = require('../services/usageService');
 const tenantContext = require('../services/tenantContext');
-const { Account, Session, SaasTenant } = require('../models');
+const deviceService = require('../services/deviceService');
+const restrictedSession = require('./restrictedSession');
+const { Account, Session, SaasTenant, Device } = require('../models');
 const caps = require('../config/capabilities');
 
 const bearer = (req) => {
@@ -32,7 +34,25 @@ const bearer = (req) => {
 const EXPIRED = () => new AppError('authentication_expired', 401, 'The session has ended. Sign in again.');
 
 /**
- * Resolve the bearer into req.auth = { account, session, scope }.
+ * The session's device. A session opened before device trust shipped has none
+ * until its first request carrying X-Device-Id, which registers that phone
+ * (services/deviceService.bindLegacySession). A blocked or removed device
+ * ends the session.
+ */
+const resolveDevice = async (account, session, req) => {
+  if (session.deviceRef) {
+    const device = await Device.findById(session.deviceRef);
+    if (!device || device.status === 'blocked') throw EXPIRED();
+    return device;
+  }
+  if (account.role === 'customer_demo') return null;
+  return deviceService.bindLegacySession(account, session, req);
+};
+
+/**
+ * Resolve the bearer into req.auth = { account, session, scope, device, restriction }.
+ * `restriction` (null, or { reason, until }) is the device-trust restriction
+ * middlewares/restrictedSession.js enforces.
  * @param {object} opts
  * @param {'full'|'onboarding'|'any'} opts.scope   which session tier may call
  * @param {boolean} opts.optional  no bearer → continue unauthenticated
@@ -65,10 +85,14 @@ const authenticate = ({ scope = 'full', optional = false } = {}) =>
     if (scope === 'onboarding' && session.scope !== 'onboarding') {
       throw new AppError('setup_already_completed', 409, 'This session is already a full session.');
     }
-    req.auth = { account, session, scope: session.scope };
+    const device = await resolveDevice(account, session, req);
+    req.auth = { account, session, scope: session.scope, device, restriction: deviceService.restrictionOf(device) };
+    restrictedSession.assertAllowed(req);
     // Cheap last-used bookkeeping (at most once a minute).
     if (Date.now() - new Date(session.lastUsedAt).getTime() > 60000) {
-      Session.updateOne({ _id: session._id }, { $set: { lastUsedAt: new Date() } }).catch(() => {});
+      const now = new Date();
+      Session.updateOne({ _id: session._id }, { $set: { lastUsedAt: now } }).catch(() => {});
+      if (device) Device.updateOne({ _id: device._id }, { $set: { lastSeenAt: now } }).catch(() => {});
     }
     return next();
   });
@@ -115,7 +139,12 @@ const tenantSurface = catchAsync(async (req, res, next) => {
   // Everything after this point runs inside the verified tenant's context:
   // the data-layer guard (models/plugins/tenantScope.js) refuses any query
   // that is not filtered to exactly this tenant.
-  return tenantContext.run({ tenantId: req.tenantId, accountId: String(account._id) }, () => next());
+  // `deviceId` lets models/plugins/base.js stamp who created each new record
+  // (a restricted device may edit only its own).
+  const { device } = req.auth;
+  return tenantContext.run({ tenantId: req.tenantId, accountId: String(account._id), deviceId: device ? String(device._id) : undefined }, () =>
+    next(),
+  );
 });
 
 const platformSurface = (req, res, next) => {
@@ -171,12 +200,15 @@ const requireCapAnywhere = (key) => (req, res, next) => {
 
 /**
  * Load a tenant-scoped document by route param into `req.docs[name]`,
- * answering 404 not_found when it does not exist IN THIS TENANT.
+ * answering 404 not_found when it does not exist IN THIS TENANT. A write that
+ * targets it from a restricted session must be the device's own record
+ * (middlewares/restrictedSession.assertOwnRecord).
  */
 const loadTenantDoc = (Model, param, name) =>
   catchAsync(async (req, res, next) => {
-    const doc = await Model.findOne({ _id: req.params[param], tenantId: req.tenantId });
+    const doc = await Model.findOne({ _id: req.params[param], tenantId: req.tenantId }).select('+_createdByDevice');
     if (!doc) throw AppError.notFound(name);
+    restrictedSession.assertOwnRecord(req, doc);
     req.docs = req.docs || {};
     req.docs[name] = doc;
     next();

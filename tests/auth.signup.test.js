@@ -9,7 +9,7 @@ const PW = 'Str0ng-passw0rd';
 const base = '/api/v1/auth';
 
 const signUp = (email, password = PW, headers = f.idem()) => f.api().post(`${base}/sign-up`).set(headers).send({ email, password });
-const verify = (challengeId, code = CODE) => f.api().post(`${base}/verification/verify`).set(f.idem()).send({ challengeId, code });
+const verify = (challengeId, code = CODE) => f.api().post(`${base}/verification/verify`).set(f.device()).set(f.idem()).send({ challengeId, code });
 const resend = (challengeId) => f.api().post(`${base}/verification/resend`).set(f.idem()).send({ challengeId });
 const addr = (p = 'su') => `${f.uniq(p)}@test.leader`;
 
@@ -205,7 +205,7 @@ describe('POST /auth/verification/verify', () => {
   test('finished administrator verifying → ready', async () => {
     const tenant = await f.createTenant();
     const { account } = await f.mainAdmin(tenant, { emailVerified: false });
-    const signIn = await f.api().post(`${base}/sign-in`).send({ email: account.email, password: f.PASSWORD }).expect(200);
+    const signIn = await f.api().post(`${base}/sign-in`).set(f.device()).send({ email: account.email, password: f.PASSWORD }).expect(200);
     expect(signIn.body.outcome).toBe('verification_required');
     const res = await verify(signIn.body.challenge.challengeId).expect(200);
     expect(res.body.outcome).toBe('ready');

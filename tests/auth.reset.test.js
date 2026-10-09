@@ -12,7 +12,7 @@ const addr = (p = 'rs') => `${f.uniq(p)}@test.leader`;
 const request = (email) => f.api().post(`${base}/password-reset/request`).send({ email });
 const verify = (token, email, code = CODE) => f.api().post(`${base}/password-reset/verify`).set(f.auth(token)).send({ email, code });
 const complete = (token, password = NEW_PW) => f.api().post(`${base}/password-reset/complete`).set(f.auth(token)).send({ password });
-const signIn = (email, password) => f.api().post(`${base}/sign-in`).send({ email, password });
+const signIn = (email, password) => f.api().post(`${base}/sign-in`).set(f.device()).send({ email, password });
 
 describe('password reset', () => {
   test('full flow: code mailed → verify → complete → all sessions revoked → new password works', async () => {
@@ -53,8 +53,9 @@ describe('password reset', () => {
     await verify(body.resetToken, email).expect(204);
     await complete(body.resetToken).expect(204);
     expect((await f.models.Account.findOne({ email })).emailVerified).toBe(true);
+    // The account has no device yet: its first device proves the mailbox again.
     const res = await signIn(email, NEW_PW).expect(200);
-    expect(res.body.outcome).toBe('onboarding');
+    expect(res.body.challenge.purpose).toBe('new_device');
   });
 
   test('enumeration-safe: unknown and Google-only addresses get the same 200 { resetToken } and a decoy', async () => {

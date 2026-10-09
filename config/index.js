@@ -60,11 +60,21 @@ const config = {
   jwtSecret: resolveJwtSecret(),
   accessTokenTtlSeconds: num(process.env.ACCESS_TOKEN_TTL_SECONDS, 900),
   onboardingTokenTtlSeconds: num(process.env.ONBOARDING_TOKEN_TTL_SECONDS, 1800),
-  // Absolute: rotation never extends it, so every account signs in again after this many days.
+  // Idle limit: each refresh and GET /auth/me slides the session to now + this many days.
   refreshTokenTtlDays: num(process.env.REFRESH_TOKEN_TTL_DAYS, 7),
+  // Absolute limit: no session outlives sign-in + this many days, however active.
+  sessionMaxDays: num(process.env.SESSION_MAX_DAYS, 30),
+  // Device trust: trusted devices per account, and how long a new device's
+  // sessions stay restricted unless a trusted device answers "Yes".
+  trustedDevicesMax: num(process.env.TRUSTED_DEVICES_MAX, 3),
+  newDeviceRestrictHours: num(process.env.NEW_DEVICE_RESTRICT_HOURS, 6),
   resetTokenTtlMinutes: num(process.env.RESET_TOKEN_TTL_MINUTES, 15),
 
-  corsOrigins: (process.env.CORS_ORIGINS || '*')
+  // Browser origins allowed to call the API. The mobile app sends no Origin
+  // and is unaffected. Unset: any origin in development/test, and NONE
+  // anywhere else — a production server opens itself to a web dashboard by
+  // naming it, never by default.
+  corsOrigins: (process.env.CORS_ORIGINS ?? (isDevOrTest ? '*' : ''))
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),

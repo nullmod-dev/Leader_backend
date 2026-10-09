@@ -49,7 +49,9 @@ const saveVersioned = async (doc, serialize, options = {}) => {
     // VersionError: Mongoose's own array-versioning (`__v`) lost the race
     // (concurrent edits of attendees / organizingTeam / …). Same meaning.
     if (err instanceof mongoose.Error.DocumentNotFoundError || err instanceof mongoose.Error.VersionError) {
-      const current = await doc.constructor.findById(doc._id);
+      // Re-read inside the document's own tenant (the data-layer guard
+      // refuses a tenant-plane query without one).
+      const current = await doc.constructor.findOne({ _id: doc._id, ...(doc.tenantId ? { tenantId: doc.tenantId } : {}) });
       throw staleWrite(current, serialize);
     }
     throw err;

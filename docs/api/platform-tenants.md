@@ -70,8 +70,8 @@ the operator confirms, reuse it only to retry that unchanged draft.
 ```json
 {
   "id": "saas_hilal",
-  "displayName": "فرق الهلال الطبية",
-  "teamCode": "MTM-4K7P-QX92",
+  "displayName": "alwalla",
+  "teamCode": "MTM-8J9M-4A4E",
   "timezone": "Asia/Damascus",
   "lifecycle": { "status": "active", "version": 4 },
   "createdAt": "2025-01-04T16:00:00.000Z",
@@ -136,7 +136,7 @@ Filtering happens **before** paging; order is newest-registered first, ties by
 id (stable). `total` counts the whole filtered set. Tombstones are never list items.
 
 ```json
-{ "items": [ { "id": "saas_hilal", "displayName": "فرق الهلال الطبية", "…": "…" } ], "total": 8, "nextCursor": "eyJ2IjoxLCJvIjo1MH0" }
+{ "items": [ { "id": "saas_hilal", "displayName": "alwalla", "…": "…" } ], "total": 8, "nextCursor": "eyJ2IjoxLCJvIjo1MH0" }
 ```
 
 | Error | When |
@@ -409,7 +409,7 @@ The lifecycle, features and Team Code are never touched.
 ```json
 {
   "tenantId": "saas_hilal",
-  "tenantName": "فرق الهلال الطبية",
+  "tenantName": "alwalla",
   "features": [
     { "key": "inventory", "enabled": true, "version": 4, "updatedAt": "2026-09-09T15:20:00.000Z" },
     { "key": "statistics_reports", "enabled": true, "version": 1, "updatedAt": "2026-01-04T16:00:00.000Z" },

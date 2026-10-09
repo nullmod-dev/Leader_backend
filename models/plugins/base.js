@@ -10,6 +10,10 @@
  *    `services/versioning.js` turns into `409 stale_write`.
  *  - `changeLog: '<entityType>'` records every upsert/delete of a
  *    tenant-scoped document in `change_log` for `GET /sync/pull`.
+ *  - tenant-scoped documents record `_createdByDevice` (the Device of the
+ *    session that created them, from services/tenantContext; select:false,
+ *    never serialized) so a restricted new device may edit its own records
+ *    and no others (middlewares/restrictedSession).
  */
 const { newId } = require('../../utils/ids');
 
@@ -21,7 +25,17 @@ function basePlugin(schema, options = {}) {
   if (!prefix) throw new Error('basePlugin requires a prefix');
 
   schema.add({ _id: { type: String, default: () => newId(prefix) } });
-  if (tenantScoped) schema.plugin(require('./tenantScope'));
+  if (tenantScoped) {
+    schema.plugin(require('./tenantScope'));
+    schema.add({ _createdByDevice: { type: String, select: false } });
+    schema.pre('save', function stampCreatingDevice(next) {
+      if (this.isNew && !this._createdByDevice) {
+        const ctx = require('../../services/tenantContext').get();
+        if (ctx && ctx.deviceId) this._createdByDevice = ctx.deviceId;
+      }
+      next();
+    });
+  }
 
   if (versioned) {
     schema.add({ version: { type: Number, default: 1, min: 1 } });
